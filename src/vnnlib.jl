@@ -1,5 +1,4 @@
-
-
+using Zygote: withgradient
 """
 Generates specification for NeuralPriorityOptimizer from result value from vnnlib parser.
 
@@ -179,6 +178,7 @@ function verify_vnnlib(solver, dir, params::OptimisationParams; logfile=nothing,
         #y_start = propagate(solver, net_npi, s, α0; printing=true)
 
         #println("--- optimisation ---")
+        println("input_set: $input_set")
         time = @elapsed res, lbs, ubs = optimise_bounds(solver, net, input_set, params=params, loss_fun=loss_fun)
         #α₁ = res.x_opt
 

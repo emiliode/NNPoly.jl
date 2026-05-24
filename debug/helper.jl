@@ -67,8 +67,8 @@ function poly_diff(p, q; tol=1e-10)
     vp = variables(p)
     vq = variables(q)
 
-    println("p: $p, vp: $vp")
-    println("q: $q, vq: $vq")
+    #println("p: $p, vp: $vp")
+    #println("q: $q, vq: $vq")
     @assert length(vp) == length(vq) "Polynomials must have same number of variables"
 
     for i in eachindex(vp)

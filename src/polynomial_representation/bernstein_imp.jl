@@ -54,9 +54,9 @@ end
 Creates a BernsteinPolynomail from the given multivariate polynomial.
 """
 function make_polynomial(polynom::AbstractPolynomialLike, orders::Vector{Int64}, X::Hyperrectangle{T}) where {T<:Number}
-    println("input: $polynom with orders: $orders over $X")
+    #println("input: $polynom with orders: $orders over $X")
     basis_vector = get_basis_vectors(orders,X)
-    println("basisvector $basis_vector")
+    #println("basisvector $basis_vector")
     all_bern_coeff= []
     for t in terms(polynom)
         ev = exponents(t)
@@ -72,7 +72,7 @@ function make_polynomial(polynom::AbstractPolynomialLike, orders::Vector{Int64},
             bern_coeff = [bern_coeff; zeros(maximum(orders)-orders[i])]
             all_bern_coeff=  push!(all_bern_coeff , bern_coeff)
         end
-        display(all_bern_coeff) 
+        #display(all_bern_coeff) 
     end
     bern_coeff_matrix = permutedims(stack(all_bern_coeff))
     #println("coeff Matrix:")

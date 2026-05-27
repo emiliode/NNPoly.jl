@@ -12,16 +12,16 @@ args:
     idx - (Integer) the index of the mononial to overapproximate
 """
 function truncate_interval(sp::SparsePolynomial, idx)
-    ei = sp.E[:,idx]
+    ei = sp.E[:, idx]
     if all(iseven.(ei))
         # all even monomials are always positive
         # get min/max of 0*G or 1*G
-        l_relax = min.(0, sp.G[:,idx])
-        u_relax = max.(0, sp.G[:,idx])
+        l_relax = min.(0, sp.G[:, idx])
+        u_relax = max.(0, sp.G[:, idx])
     else
         # get min/max of -1*G or 1*G
-        l_relax = min.(-sp.G[:,idx], sp.G[:,idx])
-        u_relax = max.(-sp.G[:,idx], sp.G[:,idx])
+        l_relax = min.(-sp.G[:, idx], sp.G[:, idx])
+        u_relax = max.(-sp.G[:, idx], sp.G[:, idx])
     end
 
     all_idxs = 1:size(sp.G, 2)
@@ -55,11 +55,17 @@ function truncate_symbolic(sp::SparsePolynomial, idx)
     all_idxs = 1:size(sp.G, 2)
     remaining_idxs = setdiff(all_idxs, idx)
 
-    lpoly = exact_addition(multiply(max.(0, sp.G[:, idx]), l_relax), multiply(min.(0, sp.G[:, idx]), u_relax))
+    lpoly = exact_addition(
+        multiply(max.(0, sp.G[:, idx]), l_relax),
+        multiply(min.(0, sp.G[:, idx]), u_relax),
+    )
     Gₗ = [sp.G[:, remaining_idxs] lpoly.G]
     Eₗ = [sp.E[:, remaining_idxs] lpoly.E]
 
-    upoly = exact_addition(multiply(max.(0, sp.G[:, idx]), u_relax), multiply(min.(0, sp.G[:, idx]), l_relax))
+    upoly = exact_addition(
+        multiply(max.(0, sp.G[:, idx]), u_relax),
+        multiply(min.(0, sp.G[:, idx]), l_relax),
+    )
     Gᵤ = [sp.G[:, remaining_idxs] upoly.G]
     Eᵤ = [sp.E[:, remaining_idxs] upoly.E]
 
@@ -96,7 +102,12 @@ kwargs:
     lower - (bool) if we want the lower relaxation to be calculated (default: true)
     upper - (bool) if we want the upper relaxation to be calculated (default: true)
 """
-function truncate_symbolic_desired(sp::SparsePolynomial, n::Integer; lower=true, upper=true)
+function truncate_symbolic_desired(
+    sp::SparsePolynomial,
+    n::Integer;
+    lower = true,
+    upper = true,
+)
     # lower - keep searching for lower bound, upper - keep searching for upper bound
     # n is number of desired generators
     if size(sp.G, 2) <= n
@@ -104,10 +115,10 @@ function truncate_symbolic_desired(sp::SparsePolynomial, n::Integer; lower=true,
         return sp, sp
     end
 
-    l2s = vec(sum(sp.G .^ 2, dims=1))
+    l2s = vec(sum(sp.G .^ 2, dims = 1))
     idx = argmin(l2s)
 
-    if sum(sp.E[:,idx]) == 0
+    if sum(sp.E[:, idx]) == 0
         # constant entry is smallest -> but can't truncate constants
         p = sortperm(l2s)
         idx = p[2] # take second-smallest generator
@@ -118,12 +129,12 @@ function truncate_symbolic_desired(sp::SparsePolynomial, n::Integer; lower=true,
     # @show size(spₗ.G, 2)
     if size(spₗ.G, 2) > n && lower
         # now only interested in lower bound
-        spₗ, sp_lu = truncate_symbolic_desired(spₗ, n; upper=false)
+        spₗ, sp_lu = truncate_symbolic_desired(spₗ, n; upper = false)
     end
 
     if size(spᵤ.G, 2) > n && upper
         # only interested in upper bound
-        sp_ul, spᵤ = truncate_symbolic_desired(spᵤ, n; lower=false)
+        sp_ul, spᵤ = truncate_symbolic_desired(spᵤ, n; lower = false)
     end
 
     return spₗ, spᵤ

@@ -4,14 +4,31 @@ const NP = NNPoly
 
 CIFAR_PATH = "./eval/cifar10"
 
-function run_cifar10_radius_growing_lin_init_experiment(; patience=2, properties=1:100, n_unfixed=[27], radii=5:50)
-    solver = PolyCROWN(NP.DiffNNPolySym(common_generators=true, init_method=:linear))
+function run_cifar10_radius_growing_lin_init_experiment(;
+    patience = 2,
+    properties = 1:100,
+    n_unfixed = [27],
+    radii = 5:50,
+)
+    solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true, init_method = :linear))
 
     current_time = Dates.now()
     date_string = Dates.format(current_time, "yyyy-mm-dd_HH-MM-SS")
 
-    model_paths = [CIFAR_PATH * "/onnx/cifar_relu_6_100_unnormalized.onnx", CIFAR_PATH * "/onnx/cifar_relu_9_200_unnormalized.onnx"]
-    params = NP.OptimisationParams(n_steps=typemax(Int), timeout=120., print_freq=25, y_stop=0., save_ys=true, save_times=true, start_lr=0.1, decay=0.98)
+    model_paths = [
+        CIFAR_PATH * "/onnx/cifar_relu_6_100_unnormalized.onnx",
+        CIFAR_PATH * "/onnx/cifar_relu_9_200_unnormalized.onnx",
+    ]
+    params = NP.OptimisationParams(
+        n_steps = typemax(Int),
+        timeout = 120.0,
+        print_freq = 25,
+        y_stop = 0.0,
+        save_ys = true,
+        save_times = true,
+        start_lr = 0.1,
+        decay = 0.98,
+    )
     force_gc = true
     logfile_prefix = "./eval/cifar10/"
     logfile = logfile_prefix * "logs_lin_init_radius_" * date_string * ".csv"
@@ -21,7 +38,13 @@ function run_cifar10_radius_growing_lin_init_experiment(; patience=2, properties
     end
 
     for model_path in model_paths
-        net = NP.onnx2CROWNNetwork(model_path, dtype=Float64, degree=1, first_layer_degree=2, add_dummy_output_layer=true)
+        net = NP.onnx2CROWNNetwork(
+            model_path,
+            dtype = Float64,
+            degree = 1,
+            first_layer_degree = 2,
+            add_dummy_output_layer = true,
+        )
 
         for prop in properties
             steps_unknown = 0
@@ -41,7 +64,14 @@ function run_cifar10_radius_growing_lin_init_experiment(; patience=2, properties
                     input_set, output_set = specs[1]
 
                     net_merged = NP.merge_spec_output_layer(net, output_set)
-                    t = @elapsed res, lbs_pcrown, ubs_pcrown = NP.optimise_bounds(solver, net_merged, input_set, params=params, loss_fun=NP.violation_loss, print_results=true)
+                    t = @elapsed res, lbs_pcrown, ubs_pcrown = NP.optimise_bounds(
+                        solver,
+                        net_merged,
+                        input_set,
+                        params = params,
+                        loss_fun = NP.violation_loss,
+                        print_results = true,
+                    )
 
                     verified = NP.get_sat(lbs_pcrown[end], ubs_pcrown[end])
                     println("\tresult: ", verified)
@@ -52,11 +82,44 @@ function run_cifar10_radius_growing_lin_init_experiment(; patience=2, properties
                     end
 
                     #save(logfile_prefix * "/$(model_name)_$(prop)_$(n_un).jld2", "result", verified, "time", t, "t_hist", res.t_hist, "y_hist", res.y_hist)
-                    hist_file_name = logfile_prefix * "$(model_name)_$(prop)_$(n_un)_hist_" * date_string * ".jld2"
-                    save(hist_file_name, "t_hist", res.t_hist, "y_hist", res.y_hist, "lbs_opt", lbs_pcrown[end], "ubs_opt", ubs_pcrown[end])
+                    hist_file_name =
+                        logfile_prefix *
+                        "$(model_name)_$(prop)_$(n_un)_hist_" *
+                        date_string *
+                        ".jld2"
+                    save(
+                        hist_file_name,
+                        "t_hist",
+                        res.t_hist,
+                        "y_hist",
+                        res.y_hist,
+                        "lbs_opt",
+                        lbs_pcrown[end],
+                        "ubs_opt",
+                        ubs_pcrown[end],
+                    )
 
                     open(logfile, "a") do f
-                        println(f, string(model_name, ", ", prop, ", ", n_un, ",", r, ", ", verified, ", ", t, ", ", length(res.t_hist), ",", hist_file_name))
+                        println(
+                            f,
+                            string(
+                                model_name,
+                                ", ",
+                                prop,
+                                ", ",
+                                n_un,
+                                ",",
+                                r,
+                                ", ",
+                                verified,
+                                ", ",
+                                t,
+                                ", ",
+                                length(res.t_hist),
+                                ",",
+                                hist_file_name,
+                            ),
+                        )
                     end
 
                     if verified == "unknown"
@@ -73,7 +136,15 @@ end
 
 
 println("precompiling ...")
-run_cifar10_radius_growing_lin_init_experiment(patience=0, properties=1:1, radii=[5,10])
+run_cifar10_radius_growing_lin_init_experiment(
+    patience = 0,
+    properties = 1:1,
+    radii = [5, 10],
+)
 
 println("running experiments ...")
-run_cifar10_radius_growing_lin_init_experiment(patience=2, properties=1:100, radii=5:50)
+run_cifar10_radius_growing_lin_init_experiment(
+    patience = 2,
+    properties = 1:100,
+    radii = 5:50,
+)

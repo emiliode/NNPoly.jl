@@ -29,7 +29,7 @@ end
 function DiffPolyInterval(net, input_set)
     layer_sizes = [length(l.bias) for l in net.layers]
     lbs = [fill(-Inf, ls) for ls in layer_sizes]
-    ubs = [fill( Inf, ls) for ls in layer_sizes]
+    ubs = [fill(Inf, ls) for ls in layer_sizes]
     s = init_poly_interval(input_set)
     return DiffPolyInterval(s, lbs, ubs)
 end
@@ -54,7 +54,13 @@ end
 Calculates concrete bounds for A*s + b for DiffPolyInterval s with common generators.
 """
 function bounds(A::AbstractMatrix, b::AbstractVector, s::DiffPolyInterval)
-    L, U = interval_map_common(min.(0, A), max.(0, A), s.poly_interval.Low, s.poly_interval.Up, b)
+    L, U = interval_map_common(
+        min.(0, A),
+        max.(0, A),
+        s.poly_interval.Low,
+        s.poly_interval.Up,
+        b,
+    )
     ll, lu = bounds(L)
     ul, uu = bounds(U)
     return ll, uu

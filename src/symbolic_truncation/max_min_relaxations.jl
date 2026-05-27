@@ -16,14 +16,27 @@ kwargs:
     max_steps - (Integer) maximum number of steps in BaB procedure
     optimality_gap - (Float64) optimality gap for early stopping of BaB procedure
 """
-function relax_max_upper(x, y; printing=false, max_steps=30, optimality_gap=1e-4)
+function relax_max_upper(x, y; printing = false, max_steps = 30, optimality_gap = 1e-4)
     # max(x,y) = max(0, y - x) + x
 
     # TODO: pull in front of all relaxations as matrix operation!!!
     p_in = subtract(y, x)
 
-    ub =  max_in_dir_bab( [1], p_in, printing=false, max_steps=max_steps, optimality_gap=optimality_gap)
-    lb = -max_in_dir_bab([-1], p_in, printing=false, max_steps=max_steps, optimality_gap=optimality_gap)
+    ub = max_in_dir_bab(
+        [1],
+        p_in,
+        printing = false,
+        max_steps = max_steps,
+        optimality_gap = optimality_gap,
+    )
+    lb =
+        -max_in_dir_bab(
+            [-1],
+            p_in,
+            printing = false,
+            max_steps = max_steps,
+            optimality_gap = optimality_gap,
+        )
     printing && println("bounds: ", [lb, ub])
 
     if lb >= 0
@@ -53,14 +66,40 @@ kwargs:
     max_steps - (Integer) maximum number of steps in BaB procedure
     optimality_gap - (Float64) optimality gap for early stopping of BaB procedure
 """
-function relax_min_lower(x, y; printing=false, max_steps=30, optimality_gap=1e-4)
-    return negate(relax_max_upper(negate(x), negate(y), printing=printing, max_steps=max_steps, optimality_gap=optimality_gap))
+function relax_min_lower(x, y; printing = false, max_steps = 30, optimality_gap = 1e-4)
+    return negate(
+        relax_max_upper(
+            negate(x),
+            negate(y),
+            printing = printing,
+            max_steps = max_steps,
+            optimality_gap = optimality_gap,
+        ),
+    )
 end
 
 
-function relax_min_max_non_parallel(x, y; printing=false, max_steps=30, optimality_gap=1e-4)
-    l_relax = relax_min_lower(x, y, printing=printing, max_steps=max_steps, optimality_gap=optimality_gap)
-    u_relax = relax_max_upper(x, y, printing=printing, max_steps=max_steps, optimality_gap=optimality_gap)
+function relax_min_max_non_parallel(
+    x,
+    y;
+    printing = false,
+    max_steps = 30,
+    optimality_gap = 1e-4,
+)
+    l_relax = relax_min_lower(
+        x,
+        y,
+        printing = printing,
+        max_steps = max_steps,
+        optimality_gap = optimality_gap,
+    )
+    u_relax = relax_max_upper(
+        x,
+        y,
+        printing = printing,
+        max_steps = max_steps,
+        optimality_gap = optimality_gap,
+    )
     return l_relax, u_relax
 end
 
@@ -81,13 +120,32 @@ kwargs:
     max_steps - (Integer) maximum number of steps in BaB procedure
     optimality_gap - (Float64) optimality gap for early stopping of BaB procedure
 """
-function relax_min_max_parallel(x, y; printing=false, max_steps=30, optimality_gap=1e-4)
+function relax_min_max_parallel(
+    x,
+    y;
+    printing = false,
+    max_steps = 30,
+    optimality_gap = 1e-4,
+)
     p_xy = stack_polys([x, y])
     μ = linear_map([0.5 0.5], p_xy)
     p_diff = linear_map([-0.5 0.5], p_xy)
 
-    u =  max_in_dir_bab( [1], p_diff, printing=false, max_steps=max_steps, optimality_gap=optimality_gap)
-    l = -max_in_dir_bab([-1], p_diff, printing=false, max_steps=max_steps, optimality_gap=optimality_gap)
+    u = max_in_dir_bab(
+        [1],
+        p_diff,
+        printing = false,
+        max_steps = max_steps,
+        optimality_gap = optimality_gap,
+    )
+    l =
+        -max_in_dir_bab(
+            [-1],
+            p_diff,
+            printing = false,
+            max_steps = max_steps,
+            optimality_gap = optimality_gap,
+        )
     printing && println("bounds: ", [l, u])
 
     l_relax = translate(μ, [min(l, -u)])
@@ -97,12 +155,31 @@ function relax_min_max_parallel(x, y; printing=false, max_steps=30, optimality_g
 end
 
 
-function relax_min_max(x, y; printing=false, max_steps=30, optimality_gap=1e-4, parallel=false)
+function relax_min_max(
+    x,
+    y;
+    printing = false,
+    max_steps = 30,
+    optimality_gap = 1e-4,
+    parallel = false,
+)
     if parallel
-        l_relax, u_relax = relax_min_max_parallel(x, y; printing=printing, max_steps=max_steps, optimality_gap=optimality_gap)
+        l_relax, u_relax = relax_min_max_parallel(
+            x,
+            y;
+            printing = printing,
+            max_steps = max_steps,
+            optimality_gap = optimality_gap,
+        )
     else
-        l_relax, u_relax = relax_min_max_non_parallel(x, y; printing=printing, max_steps=max_steps, optimality_gap=optimality_gap)
+        l_relax, u_relax = relax_min_max_non_parallel(
+            x,
+            y;
+            printing = printing,
+            max_steps = max_steps,
+            optimality_gap = optimality_gap,
+        )
     end
 
     return l_relax, u_relax
-end        
+end

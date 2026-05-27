@@ -1,6 +1,9 @@
 
 
-function ChainRulesCore.rrule(::typeof(bounds), sp::SparsePolynomial{N,M,T,GM,EM,VI}) where {N,M,T,GM,EM,VI}
+function ChainRulesCore.rrule(
+    ::typeof(bounds),
+    sp::SparsePolynomial{N,M,T,GM,EM,VI},
+) where {N,M,T,GM,EM,VI}
     lbs, ubs = exponent_bounds(sp)
 
     #G⁻ = min.(zero(N), sp.G)
@@ -8,18 +11,25 @@ function ChainRulesCore.rrule(::typeof(bounds), sp::SparsePolynomial{N,M,T,GM,EM
     #lb = G⁻ * ubs .+ G⁺ * lbs
     #ub = G⁻ * lbs .+ G⁺ * ubs
     # about 2x as fast, since we save a matrix vector product each time
-    lb = vec(sum(sp.G .* ifelse.(sp.G .> 0, lbs', ubs'), dims=2))
-    ub = vec(sum(sp.G .* ifelse.(sp.G .> 0, ubs', lbs'), dims=2))
+    lb = vec(sum(sp.G .* ifelse.(sp.G .> 0, lbs', ubs'), dims = 2))
+    ub = vec(sum(sp.G .* ifelse.(sp.G .> 0, ubs', lbs'), dims = 2))
 
     function bounds_pullback(Δt)
         Δlb, Δub = Δt
 
-        Δsp = @thunk(begin
-            #ΔGl = Δlb .* ifelse.(sp.G .> 0, lbs', ubs')
-            #ΔGu = Δub .* ifelse.(sp.G .> 0, ubs', lbs')
-            # kind of ugly, but when I write it all in one fused . notation line, it needs less memory
-            Tangent{SparsePolynomial}(G=Δlb .* ifelse.(sp.G .> 0, lbs', ubs') .+ Δub .* ifelse.(sp.G .> 0, ubs', lbs'), E=NoTangent(), ids=NoTangent())
-        end)
+        Δsp = @thunk(
+            begin
+                #ΔGl = Δlb .* ifelse.(sp.G .> 0, lbs', ubs')
+                #ΔGu = Δub .* ifelse.(sp.G .> 0, ubs', lbs')
+                # kind of ugly, but when I write it all in one fused . notation line, it needs less memory
+                Tangent{SparsePolynomial}(
+                    G = Δlb .* ifelse.(sp.G .> 0, lbs', ubs') .+
+                        Δub .* ifelse.(sp.G .> 0, ubs', lbs'),
+                    E = NoTangent(),
+                    ids = NoTangent(),
+                )
+            end
+        )
 
         return NoTangent(), Δsp
     end
@@ -28,7 +38,11 @@ function ChainRulesCore.rrule(::typeof(bounds), sp::SparsePolynomial{N,M,T,GM,EM
 end
 
 
-function ChainRulesCore.rrule(::typeof(translate), sp::SparsePolynomial{N,M,T,GM,EM,VI}, v::AbstractVector) where {N,M,T,GM,EM,VI}
+function ChainRulesCore.rrule(
+    ::typeof(translate),
+    sp::SparsePolynomial{N,M,T,GM,EM,VI},
+    v::AbstractVector,
+) where {N,M,T,GM,EM,VI}
     const_idx = findfirst(x -> sum(x) == 0, eachcol(sp.E))
 
     if isnothing(const_idx)
@@ -37,7 +51,7 @@ function ChainRulesCore.rrule(::typeof(translate), sp::SparsePolynomial{N,M,T,GM
         ŝp = SparsePolynomial(Ĝ, Ê, sp.ids)
     else
         Ĝ = copy(sp.G) #zeros(N, size(sp.G))
-        Ĝ[:,const_idx] .+= v
+        Ĝ[:, const_idx] .+= v
         ŝp = SparsePolynomial(Ĝ, sp.E, sp.ids)
     end
 
@@ -49,13 +63,17 @@ function ChainRulesCore.rrule(::typeof(translate), sp::SparsePolynomial{N,M,T,GM
         if isnothing(const_idx)
             # derivative is just the identity for the non-constant part and zero for the constant part (that's just the vector v)
             # other_idxs = 1:size(sp.G, 2) .!= const_idx
-            Δsp = Tangent{SparsePolynomial}(G=ΔĜ[:,2:end], E=NoTangent(), ids=NoTangent())
-            Δv  = ΔĜ[:,1]
+            Δsp = Tangent{SparsePolynomial}(
+                G = ΔĜ[:, 2:end],
+                E = NoTangent(),
+                ids = NoTangent(),
+            )
+            Δv = ΔĜ[:, 1]
         else
             # we just added some values to the constant column, so just identity for all elements of G
-            Δsp = Tangent{SparsePolynomial}(G=ΔĜ, E=NoTangent(), ids=NoTangent())
+            Δsp = Tangent{SparsePolynomial}(G = ΔĜ, E = NoTangent(), ids = NoTangent())
             # derivative is just identity at column where we added the vector, zero elsewhere
-            Δv  = ΔĜ[:,const_idx]
+            Δv = ΔĜ[:, const_idx]
         end
 
         return NoTangent(), Δsp, Δv
@@ -72,40 +90,48 @@ end
 # only raise matrix elements to power if exponent is non-zero
 function non_zero_power(m::AbstractVecOrMat, e::AbstractVector)
     mask = e .!= 0
-    return (@view m[:,mask]) .^ e[mask]'
+    return (@view m[:, mask]) .^ e[mask]'
 end
 
 function non_zero_mul(m::AbstractVecOrMat, e::AbstractVector)
     mask = e .!= 0
-    return (@view m[:,mask]) .* e[mask]'
+    return (@view m[:, mask]) .* e[mask]'
 end
 
 
 # accumulate product of non-zero powers inplace
-function prod_non_zero_power!(prod_cum::AbstractVector, G::AbstractMatrix, e::AbstractVector{<:Integer})
+function prod_non_zero_power!(
+    prod_cum::AbstractVector,
+    G::AbstractMatrix,
+    e::AbstractVector{<:Integer},
+)
     first_prod = true
     for (i, eᵢ) in enumerate(e)
         if eᵢ != 0
             if first_prod
-                prod_cum .= (@view G[:,i]) .^ eᵢ
+                prod_cum .= (@view G[:, i]) .^ eᵢ
                 first_prod = false
             else
-                prod_cum .*= (@view G[:,i]) .^ eᵢ
+                prod_cum .*= (@view G[:, i]) .^ eᵢ
             end
         end
     end
 end
 
 
-function sum_non_zero_mul!(sum_cum::AbstractVector, E::AbstractMatrix{<:Integer}, e::AbstractVector{<:Integer})
+function sum_non_zero_mul!(
+    sum_cum::AbstractVector,
+    E::AbstractMatrix{<:Integer},
+    e::AbstractVector{<:Integer},
+)
     first_sum = true
     for (i, eᵢ) in enumerate(e)
         if eᵢ != 0
             if first_sum
-                sum_cum .= (@view E[:,i]) .* eᵢ
+                sum_cum .= (@view E[:, i]) .* eᵢ
                 first_sum = false
             else
-                sum_cum .+= (@view E[:,i]) .* eᵢ
+                sum_cum .+= (@view E[:, i]) .* eᵢ
             end
         end
     end
@@ -126,8 +152,8 @@ function pow(sp::SparsePolynomial{N,M}, n::Integer) where {N,M}
         prod_non_zero_power!(prod_cum, sp.G, e)
         sum_non_zero_mul!(sum_cum, sp.E, e)
         prod_cum .*= multinomial(e...)
-        Ĝ[:,i] .= prod_cum
-        Ê[:,i] .= sum_cum
+        Ĝ[:, i] .= prod_cum
+        Ê[:, i] .= sum_cum
     end
 
     return SparsePolynomial(Ĝ, Ê, sp.ids)
@@ -150,11 +176,11 @@ function pow(sp::SparsePolynomial{N,M}, n::Integer, l, u) where {N,M}
     prod_cum = zeros(sum(mask))
     sum_cum = zeros(size(sp.E, 1))
     for (i, e) in zip(1:n_terms, multiexponents(c, n))
-        prod_non_zero_power!(prod_cum, @view(sp.G[mask,:]), e)
+        prod_non_zero_power!(prod_cum, @view(sp.G[mask, :]), e)
         sum_non_zero_mul!(sum_cum, sp.E, e)
         prod_cum .*= multinomial(e...)
-        Ĝ[mask,i] .= prod_cum
-        Ê[:,i] .= sum_cum
+        Ĝ[mask, i] .= prod_cum
+        Ê[:, i] .= sum_cum
     end
 
     return SparsePolynomial(Ĝ, Ê, sp.ids)
@@ -173,7 +199,7 @@ function ChainRulesCore.rrule(::typeof(pow), sp::SparsePolynomial, n::Integer)
         prod_cum = zeros(r)
         sum_cum = zeros(size(sp.E, 1))
         for (i, e) in enumerate(multiexponents(c, n))
-            for j in 1:size(sp.G, 2)
+            for j = 1:size(sp.G, 2)
                 if e[j] == 0
                     continue
                 end
@@ -184,13 +210,15 @@ function ChainRulesCore.rrule(::typeof(pow), sp::SparsePolynomial, n::Integer)
                 #gⱼ = α .* prod(non_zero_power(sp.G, e), dims=2)
                 e[j] += 1
 
-                Ĝ[:,j] .+= multinomial(e...) .* (@view ΔG[:,i]) .* α .* prod_cum
+                Ĝ[:, j] .+= multinomial(e...) .* (@view ΔG[:, i]) .* α .* prod_cum
             end
         end
 
         # return tangent types for **all** arguments of the rrule
         # so for ::typeof(power_n_loop), sp, n
-        return NoTangent(), Tangent{SparsePolynomial}(G=Ĝ, E=NoTangent(), ids=NoTangent()), NoTangent()
+        return NoTangent(),
+        Tangent{SparsePolynomial}(G = Ĝ, E = NoTangent(), ids = NoTangent()),
+        NoTangent()
     end
 
     return ŝp, pow_pullback
@@ -209,7 +237,7 @@ function ChainRulesCore.rrule(::typeof(pow), sp::SparsePolynomial, n::Integer, l
         prod_cum = zeros(r)
         sum_cum = zeros(size(sp.E, 1))
         for (i, e) in enumerate(multiexponents(c, n))
-            for j in 1:size(sp.G, 2)
+            for j = 1:size(sp.G, 2)
                 if e[j] == 0
                     continue
                 end
@@ -219,13 +247,17 @@ function ChainRulesCore.rrule(::typeof(pow), sp::SparsePolynomial, n::Integer, l
                 prod!(prod_cum, non_zero_power(sp.G, e))
                 e[j] += 1
 
-                Ĝ[:,j] .+= multinomial(e...) .* (@view ΔG[:,i]) .* α .* prod_cum
+                Ĝ[:, j] .+= multinomial(e...) .* (@view ΔG[:, i]) .* α .* prod_cum
             end
         end
 
         # return tangent types for **all** arguments of the rrule
         # so for ::typeof(power_n_loop), sp, n, l, u  (l, u only used in comparison -> Zero gradient)
-        return NoTangent(), Tangent{SparsePolynomial}(G=Ĝ, E=NoTangent(), ids=NoTangent()), NoTangent(), ZeroTangent(), ZeroTangent()
+        return NoTangent(),
+        Tangent{SparsePolynomial}(G = Ĝ, E = NoTangent(), ids = NoTangent()),
+        NoTangent(),
+        ZeroTangent(),
+        ZeroTangent()
     end
 
     return ŝp, pow_pullback
@@ -267,10 +299,10 @@ function quad_prop_common(cₗ, cᵤ, spl, spu, ll, lu, ul, uu)
     us = [lu; uu]
     cs = [cₗ; cᵤ]
 
-    ŝp = fast_quad_prop(cs[:,3], cs[:,2], cs[:,1], sp_both, ls, us)
+    ŝp = fast_quad_prop(cs[:, 3], cs[:, 2], cs[:, 1], sp_both, ls, us)
 
-    L̂ = SparsePolynomial(ŝp.G[1:n,:], ŝp.E, ŝp.ids)
-    Û = SparsePolynomial(ŝp.G[n+1:end,:], ŝp.E, ŝp.ids)
+    L̂ = SparsePolynomial(ŝp.G[1:n, :], ŝp.E, ŝp.ids)
+    Û = SparsePolynomial(ŝp.G[(n+1):end, :], ŝp.E, ŝp.ids)
 
     return L̂, Û
 end
@@ -298,14 +330,25 @@ args:
 kwargs:
     init - initialize indices in-place 
 """
-function quad_prop_common!(cₗ, cᵤ, spl::SparsePolynomial{N,M}, spu::SparsePolynomial{N,M}, rs, cs, symmetric_factor, unique_idxs, duplicate_idxs; init=false) where {N,M}
+function quad_prop_common!(
+    cₗ,
+    cᵤ,
+    spl::SparsePolynomial{N,M},
+    spu::SparsePolynomial{N,M},
+    rs,
+    cs,
+    symmetric_factor,
+    unique_idxs,
+    duplicate_idxs;
+    init = false,
+) where {N,M}
     n, m = size(spl.G)
     sp = SparsePolynomial([spl.G; spu.G], spl.E, spl.ids)
     coeffs = [cₗ; cᵤ]
 
-    a = coeffs[:,3]
-    b = coeffs[:,2]
-    c = coeffs[:,1]
+    a = coeffs[:, 3]
+    b = coeffs[:, 2]
+    c = coeffs[:, 1]
 
     if init
         @ignore_derivatives begin
@@ -318,10 +361,10 @@ function quad_prop_common!(cₗ, cᵤ, spl::SparsePolynomial{N,M}, spu::SparsePo
     end
 
     # square polynomial
-    Ĝ = sp.G[:,rs] .* sp.G[:, cs] .* symmetric_factor'
-    Ê = sp.E[:,rs] .+ sp.E[:,cs]
+    Ĝ = sp.G[:, rs] .* sp.G[:, cs] .* symmetric_factor'
+    Ê = sp.E[:, rs] .+ sp.E[:, cs]
 
-    
+
     G_lin = b .* sp.G
     sp = SparsePolynomial([c G_lin a .* Ĝ], [zeros(M, length(sp.ids)) sp.E Ê], sp.ids)
 
@@ -333,10 +376,10 @@ function quad_prop_common!(cₗ, cᵤ, spl::SparsePolynomial{N,M}, spu::SparsePo
         end
     end
 
-    ŝp = compact(sp, unique_idxs, duplicate_idxs, remove_zeros=false)
+    ŝp = compact(sp, unique_idxs, duplicate_idxs, remove_zeros = false)
 
-    L̂ = SparsePolynomial(ŝp.G[1:n,:], ŝp.E, ŝp.ids)
-    Û = SparsePolynomial(ŝp.G[n+1:end,:], ŝp.E, ŝp.ids)
+    L̂ = SparsePolynomial(ŝp.G[1:n, :], ŝp.E, ŝp.ids)
+    Û = SparsePolynomial(ŝp.G[(n+1):end, :], ŝp.E, ŝp.ids)
 
     return L̂, Û
 end
@@ -362,15 +405,15 @@ function get_triangular_indices(m, n)
     # initializing with undef saves time to overwrite with zeros
     rs = Vector{Int}(undef, sz)
     cs = Vector{Int}(undef, sz)
-    
+
     cnt = 1
-    for i in 1:m
-        for j in i:n
+    for i = 1:m
+        for j = i:n
             rs[cnt] = i
             cs[cnt] = j
             cnt += 1
         end
     end
-    
+
     return rs, cs
 end

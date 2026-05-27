@@ -16,17 +16,23 @@ kwargs:
     max_steps - (Integer) maximum number of steps for BaB procedure
     optimality_gap - (Float64) optimality gap for early stopping of BaB procedure
 """
-function relax_monomial_cheby(exponent, id; degree=nothing, max_steps=30, optimality_gap=1e-4)
+function relax_monomial_cheby(
+    exponent,
+    id;
+    degree = nothing,
+    max_steps = 30,
+    optimality_gap = 1e-4,
+)
     if exponent == 1
-        lcheby = negate(make_monomial([0], ids=[id]))
-        ucheby = make_monomial([0], ids=[id])
+        lcheby = negate(make_monomial([0], ids = [id]))
+        ucheby = make_monomial([0], ids = [id])
         return lcheby, ucheby
     elseif exponent == 2
-        lcheby = linear_map(0, make_monomial([0], ids=[id]))
-        ucheby = make_monomial([0], ids=[id])
+        lcheby = linear_map(0, make_monomial([0], ids = [id]))
+        ucheby = make_monomial([0], ids = [id])
         return lcheby, ucheby
     end
-            
+
     degree = isnothing(degree) ? exponent - 2 : degree
 
     if iseven(exponent)
@@ -39,8 +45,21 @@ function relax_monomial_cheby(exponent, id; degree=nothing, max_steps=30, optima
 
     f = make_monomial([exponent])
     diff = subtract(f, cheby)
-    ub =  max_in_dir_bab( [1], diff, printing=false, max_steps=max_steps, optimality_gap=optimality_gap)
-    lb = -max_in_dir_bab([-1], diff, printing=false, max_steps=max_steps, optimality_gap=optimality_gap)
+    ub = max_in_dir_bab(
+        [1],
+        diff,
+        printing = false,
+        max_steps = max_steps,
+        optimality_gap = optimality_gap,
+    )
+    lb =
+        -max_in_dir_bab(
+            [-1],
+            diff,
+            printing = false,
+            max_steps = max_steps,
+            optimality_gap = optimality_gap,
+        )
 
     lcheby = translate(cheby, [lb])
     ucheby = translate(cheby, [ub])

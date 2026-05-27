@@ -13,17 +13,38 @@
 end
 
 
-function forward_linear(solver::DiffNNPolySym, L::NV.LayerNegPosIdx, input::DiffPolyInterval)
+function forward_linear(
+    solver::DiffNNPolySym,
+    L::NV.LayerNegPosIdx,
+    input::DiffPolyInterval,
+)
     if solver.common_generators
-        Low, Up = interval_map_common(L.W_neg, L.W_pos, input.poly_interval.Low, input.poly_interval.Up, L.bias)
+        Low, Up = interval_map_common(
+            L.W_neg,
+            L.W_pos,
+            input.poly_interval.Low,
+            input.poly_interval.Up,
+            L.bias,
+        )
     else
-        Low, Up = interval_map(L.W_neg, L.W_pos, input.poly_interval.Low, input.poly_interval.Up, L.bias)
+        Low, Up = interval_map(
+            L.W_neg,
+            L.W_pos,
+            input.poly_interval.Low,
+            input.poly_interval.Up,
+            L.bias,
+        )
     end
     return DiffPolyInterval(Low, Up, input.lbs, input.ubs)
 end
 
 
-function forward_act(solver::DiffNNPolySym, L::NV.LayerNegPosIdx{NV.ReLU}, input::DiffPolyInterval, α)
+function forward_act(
+    solver::DiffNNPolySym,
+    L::NV.LayerNegPosIdx{NV.ReLU},
+    input::DiffPolyInterval,
+    α,
+)
     sym = input.poly_interval
     n = size(sym.Low.G, 1)
     degrees = 2*ones(Integer, n)
@@ -50,13 +71,13 @@ function forward_act(solver::DiffNNPolySym, L::NV.LayerNegPosIdx{NV.ReLU}, input
             # Chebyshev initialisation
             resl = relax_relu_chebyshev.(ll, lu, 2*ones(Integer, n))
             resu = relax_relu_chebyshev.(ul, uu, 2*ones(Integer, n))
-            α[1,1:2,:] .= vecOfVec2Mat(first.(resl))'[2:3,:]
-            α[2,1:2,:] .= vecOfVec2Mat(first.(resu))'[2:3,:]
+            α[1, 1:2, :] .= vecOfVec2Mat(first.(resl))'[2:3, :]
+            α[2, 1:2, :] .= vecOfVec2Mat(first.(resu))'[2:3, :]
 
             cₗ = vecOfVec2Mat(first.(resl))
-            cₗ[:,1] .-= last.(resl)
+            cₗ[:, 1] .-= last.(resl)
             cᵤ = vecOfVec2Mat(first.(resu))
-            cᵤ[:,1] .+= last.(resu)
+            cᵤ[:, 1] .+= last.(resu)
 
             cₗ = [c for c in eachrow(cₗ)]
             cᵤ = [c for c in eachrow(cᵤ)]
@@ -66,8 +87,8 @@ function forward_act(solver::DiffNNPolySym, L::NV.LayerNegPosIdx{NV.ReLU}, input
             cᵤ = relax_relu_crown_quad_upper.(ul, uu)
 
             # CROWNQuad is quadratic relaxation, so set first two params
-            α[1,1:2,:] .= vecOfVec2Mat(cₗ)'[2:3,:]
-            α[2,1:2,:] .= vecOfVec2Mat(cᵤ)'[2:3,:]
+            α[1, 1:2, :] .= vecOfVec2Mat(cₗ)'[2:3, :]
+            α[2, 1:2, :] .= vecOfVec2Mat(cᵤ)'[2:3, :]
 
             cₗ = vecOfVec2Mat(cₗ)
             cᵤ = vecOfVec2Mat(cᵤ)
@@ -79,8 +100,8 @@ function forward_act(solver::DiffNNPolySym, L::NV.LayerNegPosIdx{NV.ReLU}, input
         #cᵤ = [ifelse(l >= 0, [0., 1, 0], ifelse(u <= 0, zeros(3), get_upper_polynomial_shift(l, u, 2, a))) for (l, u, a) in zip(ul, uu, eachcol(α[2,:,:]))]
         #cₗ = get_lower_polynomial_shift.(ll, lu, 2, eachcol(α[1,:,:]))
         #cᵤ = get_upper_polynomial_shift.(ul, uu, 2, eachcol(α[2,:,:]))
-        cₗ = get_lower_polynomial_shift(ll, lu, 2, α[1,:,:]')
-        cᵤ = get_upper_polynomial_shift(ul, uu, 2, α[2,:,:]')
+        cₗ = get_lower_polynomial_shift(ll, lu, 2, α[1, :, :]')
+        cᵤ = get_upper_polynomial_shift(ul, uu, 2, α[2, :, :]')
     end
 
     #cₗ = vecOfVec2Mat(cₗ)
@@ -89,15 +110,20 @@ function forward_act(solver::DiffNNPolySym, L::NV.LayerNegPosIdx{NV.ReLU}, input
     if solver.common_generators
         L̂, Û = quad_prop_common(cₗ, cᵤ, s.Low, s.Up, ll, lu, ul, uu)
     else
-        L̂ = fast_quad_prop(cₗ[:,3], cₗ[:,2], cₗ[:,1], s.Low, ll, lu)
-        Û = fast_quad_prop(cᵤ[:,3], cᵤ[:,2], cᵤ[:,1], s.Up, ul, uu)
+        L̂ = fast_quad_prop(cₗ[:, 3], cₗ[:, 2], cₗ[:, 1], s.Low, ll, lu)
+        Û = fast_quad_prop(cᵤ[:, 3], cᵤ[:, 2], cᵤ[:, 1], s.Up, ul, uu)
     end
 
     return DiffPolyInterval(L̂, Û, input.lbs, input.ubs)
 end
 
 
-function forward_act(solver::DiffNNPolySym, L::NV.LayerNegPosIdx{NV.Id}, input::DiffPolyInterval, α)
+function forward_act(
+    solver::DiffNNPolySym,
+    L::NV.LayerNegPosIdx{NV.Id},
+    input::DiffPolyInterval,
+    α,
+)
     return input
 end
 
@@ -109,7 +135,10 @@ function vec2propagation(net, degree::Integer, α::AbstractVector)
     extended_layer_sizes = [0; layer_sizes]
     cls = cumsum(extended_layer_sizes)
 
-    αs = [reshape(α[2*degree*cls[i]+1:2*degree*cls[i+1]], 2, degree, :) for i in 1:length(layer_sizes)]
+    αs = [
+        reshape(α[(2*degree*cls[i]+1):(2*degree*cls[i+1])], 2, degree, :) for
+        i = 1:length(layer_sizes)
+    ]
     return αs
 end
 
@@ -119,7 +148,7 @@ function propagation2vec(net, degree, αs)
 end
 
 
-function initialize_params(net, degree; method=:random)
+function initialize_params(net, degree; method = :random)
     layer_sizes = [length(l.bias) for l in net.layers]
     n_neurons = sum(layer_sizes)
     # for each neuron lower and upper relaxation have degree params each
@@ -137,14 +166,24 @@ function initialize_params(net, degree; method=:random)
 end
 
 
-function initialize_params(solver::DiffNNPolySym, net, degree, s::DiffPolyInterval; method=:CROWNQuad)
+function initialize_params(
+    solver::DiffNNPolySym,
+    net,
+    degree,
+    s::DiffPolyInterval;
+    method = :CROWNQuad,
+)
     # just copy the solver, but set init=true
-    dsolver = DiffNNPolySym(truncation_terms=solver.truncation_terms,
-                                separate_relaxations=solver.separate_relaxations,
-                                relaxations=solver.relaxations, splitting_depth=solver.splitting_depth,
-                                init=true, save_bounds=solver.save_bounds,
-                                common_generators=solver.common_generators)
-    α0 = initialize_params(net, degree, method=:zero)
+    dsolver = DiffNNPolySym(
+        truncation_terms = solver.truncation_terms,
+        separate_relaxations = solver.separate_relaxations,
+        relaxations = solver.relaxations,
+        splitting_depth = solver.splitting_depth,
+        init = true,
+        save_bounds = solver.save_bounds,
+        common_generators = solver.common_generators,
+    )
+    α0 = initialize_params(net, degree, method = :zero)
     αs = vec2propagation(net, degree, α0)
 
     ŝ = forward_network(dsolver, net, s, αs)
@@ -156,7 +195,11 @@ end
 """
 Initialize the symbolic domain corresponding to the given solver with the respective input set.
 """
-function initialize_symbolic_domain(solver::DiffNNPolySym, net, input::AbstractHyperrectangle)
+function initialize_symbolic_domain(
+    solver::DiffNNPolySym,
+    net,
+    input::AbstractHyperrectangle,
+)
     return DiffPolyInterval(net, input)
 end
 
@@ -167,7 +210,13 @@ end
 #  one vector per layer.
 
 # here αs is a vector! (in contrast to forward_network)
-function propagate(solver::DiffNNPolySym, net::NV.NetworkNegPosIdx, input, α; printing=false)
+function propagate(
+    solver::DiffNNPolySym,
+    net::NV.NetworkNegPosIdx,
+    input,
+    α;
+    printing = false,
+)
     αs = vec2propagation(net, 2, α)
     s = forward_network(solver, net, input, αs)
 
@@ -183,16 +232,28 @@ function propagate(solver::DiffNNPolySym, net::NV.NetworkNegPosIdx, input, α; p
 end
 
 
-function propagate(solver::DiffNNPolySym, net::NV.NetworkNegPosIdx, input::AbstractHyperrectangle, α; printing=false)
+function propagate(
+    solver::DiffNNPolySym,
+    net::NV.NetworkNegPosIdx,
+    input::AbstractHyperrectangle,
+    α;
+    printing = false,
+)
     s = DiffPolyInterval(net, input)
-    return propagate(solver, net, s, α, printing=printing)
+    return propagate(solver, net, s, α, printing = printing)
 end
 
 
 ## optimisation
 
-function optimise_bounds(solver::DiffNNPolySym, net::NV.NetworkNegPosIdx, input_set; clip_norm=10., opt=nothing,
-                         params=OptimisationParams())
+function optimise_bounds(
+    solver::DiffNNPolySym,
+    net::NV.NetworkNegPosIdx,
+    input_set;
+    clip_norm = 10.0,
+    opt = nothing,
+    params = OptimisationParams(),
+)
     opt = isnothing(opt) ? OptimiserChain(ClipNorm(clip_norm), Adam()) : opt
     s = DiffPolyInterval(net, input_set)
 
@@ -203,5 +264,5 @@ function optimise_bounds(solver::DiffNNPolySym, net::NV.NetworkNegPosIdx, input_
     # TODO: maybe check num_crossing after optimisation, especially if gradient was 0
     # TODO: maybe store intermediate bounds also for output layer and return min/max of that
 
-    res = optimise(optfun, opt, α0, params=params)
+    res = optimise(optfun, opt, α0, params = params)
 end

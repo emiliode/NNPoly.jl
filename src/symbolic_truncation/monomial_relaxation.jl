@@ -15,7 +15,7 @@ args:
 kwargs:
     parallel - (bool) whether to use parallel relaxations for the monomials
 """
-function relax_monomial(es, ids; parallel=false)
+function relax_monomial(es, ids; parallel = false)
     non_zeros = es .!= 0
     zero_ids = ids[.~non_zeros]
     es = es[non_zeros]
@@ -31,7 +31,10 @@ function relax_monomial(es, ids; parallel=false)
         n = length(es)
         # TODO: this assumes consecutive variables ids !
         l1, u1 = relax_monomial(es[1:floor(Integer, 0.5*n)], ids[1:floor(Integer, 0.5*n)])
-        l2, u2 = relax_monomial(es[floor(Integer, 0.5*n)+1:end], ids[floor(Integer, 0.5*n)+1:end])
+        l2, u2 = relax_monomial(
+            es[(floor(Integer, 0.5*n)+1):end],
+            ids[(floor(Integer, 0.5*n)+1):end],
+        )
 
         polys = stack_polys([l1, u1, l2, u2])
 
@@ -64,16 +67,17 @@ function relax_monomial(es, ids; parallel=false)
         #u_max2 = relax_max_upper(b3, b4, printing=false)
         #u_max  = relax_max_upper(u_max1, u_max2, printing=false)
 
-        l_min1, u_max1 = relax_min_max(b1, b2, printing=false, parallel=parallel)
-        l_min2, u_max2 = relax_min_max(b3, b4, printing=false, parallel=parallel)
+        l_min1, u_max1 = relax_min_max(b1, b2, printing = false, parallel = parallel)
+        l_min2, u_max2 = relax_min_max(b3, b4, printing = false, parallel = parallel)
         if parallel
             # need to ensure that l_min, u_max are parallel!
-            l_min, _ = relax_min_max(l_min1, l_min2, printing=false, parallel=parallel)
-            _, u_max = relax_min_max(u_max1, u_max2, printing=false, parallel=parallel)
-            l_min, u_max = relax_min_max(l_min, u_max, printing=false, parallel=parallel)
+            l_min, _ = relax_min_max(l_min1, l_min2, printing = false, parallel = parallel)
+            _, u_max = relax_min_max(u_max1, u_max2, printing = false, parallel = parallel)
+            l_min, u_max =
+                relax_min_max(l_min, u_max, printing = false, parallel = parallel)
         else
-            l_min  = relax_min_lower(l_min1, l_min2, printing=false)
-            u_max  = relax_max_upper(u_max1, u_max2, printing=false)
+            l_min = relax_min_lower(l_min1, l_min2, printing = false)
+            u_max = relax_max_upper(u_max1, u_max2, printing = false)
         end
 
     end

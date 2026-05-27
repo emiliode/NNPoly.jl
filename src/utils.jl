@@ -52,7 +52,7 @@ args:
 """
 function duplicates(a)
     inds = keys(a)
-    eldict = Dict{eltype(a), Vector{eltype(inds)}}()
+    eldict = Dict{eltype(a),Vector{eltype(inds)}}()
     for (val, ind) in zip(a, inds)
         if haskey(eldict, val)
             # detected other index where val is also stored
@@ -78,7 +78,10 @@ args:
 """
 function compactification_matrix(A, duplicate_dict)
     row_idxs = reduce(vcat, values(duplicate_dict))
-    col_idxs = reduce(vcat,[i .* ones(length(vlist)) for (i,vlist) in enumerate(values(duplicate_dict))])
+    col_idxs = reduce(
+        vcat,
+        [i .* ones(length(vlist)) for (i, vlist) in enumerate(values(duplicate_dict))],
+    )
 
     return sparse(row_idxs, col_idxs, 1, size(A, 2), length(duplicate_dict))
 end
@@ -90,7 +93,7 @@ end
 """
 Constructs a ComponentVector with components named C, l and u
 """
-comp_vec_clu(C, l, u) = ComponentVector(C=C, l=l, u=u)
+comp_vec_clu(C, l, u) = ComponentVector(C = C, l = l, u = u)
 
 function ChainRulesCore.rrule(::typeof(comp_vec_clu), C, l, u)
     out = comp_vec_clu(C, l, u)
@@ -119,38 +122,38 @@ Algorithm taken from
 -  https://github.com/JuliaReach/LazySets.jl/pull/2288 (LazySets issue about vertices list of 2D zonotopes) and
 - https://github.com/TUMcps/CORA/blob/master/contSet/%40zonotope/polygon.m (CORA implementation for zonotope to polygon in MATLAB)
 """
-function vertices_list_2d_zonotope(z::AZ) where {N, AZ<:AbstractZonotope{N}}
+function vertices_list_2d_zonotope(z::AZ) where {N,AZ<:AbstractZonotope{N}}
     c = z.center
     G = z.generators
     d, n = size(G)
     @assert d == 2 string("Only plot 2-D zonotopes!")
 
     # maximum in x and y direction (assuming 0-center)
-    x_max = sum(abs.(G[1,:]))
-    y_max = sum(abs.(G[2,:]))
+    x_max = sum(abs.(G[1, :]))
+    y_max = sum(abs.(G[2, :]))
 
     # make all generators pointing up
     Gnorm = copy(G)
-    Gnorm[:, G[2,:] .< 0] .= -1 .* G[:, G[2,:] .< 0]
+    Gnorm[:, G[2, :] .< 0] .= -1 .* G[:, G[2, :] .< 0]
 
     # sort generators according to angle to the positive x-axis
-    θ = atan.(Gnorm[2,:], Gnorm[1,:])
+    θ = atan.(Gnorm[2, :], Gnorm[1, :])
     θ[θ .< 0] .+= 2*π
     Gsort = Gnorm[:, sortperm(θ)]
 
     # get boundary of zonotope by stacking the generators together
     # first the generators pointing the most right, then up then left.
     ps = zeros(2, n+1)
-    for i in 1:n
+    for i = 1:n
         ps[:, i+1] = ps[:, i] + 2*Gsort[:, i]
     end
 
-    ps[1,:] .= ps[1,:] .+ x_max .- maximum(ps[1,:])
-    ps[2,:] .= ps[2,:] .- y_max
+    ps[1, :] .= ps[1, :] .+ x_max .- maximum(ps[1, :])
+    ps[2, :] .= ps[2, :] .- y_max
 
     # since zonotope is centrally symmetric, we can get the left half of the
     # zonotope by mirroring the right half
-    ps = [ps ps[:,end] .+ ps[:,1] .- ps[:,2:end]]
+    ps = [ps ps[:, end] .+ ps[:, 1] .- ps[:, 2:end]]
 
     # translate by the center of the zonotope
     ps .+= c
@@ -162,7 +165,7 @@ end
 Computes a polygon enclosing each LazySet in the list.
 The polygon can later be used for plotting.
 """
-function _plot_list(list::AbstractVector{VN}) where {N, VN<:LazySet{N}}
+function _plot_list(list::AbstractVector{VN}) where {N,VN<:LazySet{N}}
     xs = Vector{N}()
     ys = Vector{N}()
     first = true
@@ -188,14 +191,14 @@ function _plot_list(list::AbstractVector{VN}) where {N, VN<:LazySet{N}}
 end
 
 
-function _plot_list(list::AbstractVector{AZ}) where {N, AZ<:AbstractZonotope{N}}
+function _plot_list(list::AbstractVector{AZ}) where {N,AZ<:AbstractZonotope{N}}
     xs = Vector{N}()
     ys = Vector{N}()
     first = true
     for l in list
         ps = vertices_list_2d_zonotope(l)
-        x = ps[1,:]
-        y = ps[2,:]
+        x = ps[1, :]
+        y = ps[2, :]
 
         if first
             first = false

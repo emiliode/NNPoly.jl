@@ -2,7 +2,12 @@
 
 # Custom neural network layers based on Flux.jl s.t. we can easily incorporate learnable parameters
 
-struct CROWNLayer{F<:NV.ActivationFunction, MN<:AbstractArray, BN<:AbstractArray, AN<:AbstractArray}
+struct CROWNLayer{
+    F<:NV.ActivationFunction,
+    MN<:AbstractArray,
+    BN<:AbstractArray,
+    AN<:AbstractArray,
+}
     weights::MN  # can't use Matrix{N} as we want to use a CUDAArray later on
     bias::BN  # is there a way to force the element types of weights and bias to be the same?
     activation::F
@@ -10,13 +15,13 @@ struct CROWNLayer{F<:NV.ActivationFunction, MN<:AbstractArray, BN<:AbstractArray
 end
 
 
-function (m::CROWNLayer{NV.ReLU, MN, BN, AN})(x) where {MN,BN,AN}
+function (m::CROWNLayer{NV.ReLU,MN,BN,AN})(x) where {MN,BN,AN}
     σ = NNlib.fast_act(Flux.relu, x)
     return σ.(m.weights * x .+ m.bias)
 end
 
 
-function (m::CROWNLayer{NV.Id, MN, BN, AN})(x) where {MN,BN,AN}
+function (m::CROWNLayer{NV.Id,MN,BN,AN})(x) where {MN,BN,AN}
     return m.weights * x .+ m.bias
 end
 
@@ -49,17 +54,24 @@ kwargs:
 returns:
     Flux.Chain of the layers with params for trainable activations
 """
-function onnx2CROWNNetwork(onnx_file; dtype=Float64, degree=1, first_layer_degree=-1, add_dummy_output_layer=false)
-    ws, bs = load_network(onnx_file, dtype=dtype)
+function onnx2CROWNNetwork(
+    onnx_file;
+    dtype = Float64,
+    degree = 1,
+    first_layer_degree = -1,
+    add_dummy_output_layer = false,
+)
+    ws, bs = load_network(onnx_file, dtype = dtype)
     start_idx = 1
     stop_idx = add_dummy_output_layer ? length(bs) : length(bs) - 1
 
     # is there a better way to expand a scalar to an array?
     if first_layer_degree == -1
-        degrees = typeof(degree) <: Number ? [degree for w in ws[start_idx:stop_idx]] : degree
+        degrees =
+            typeof(degree) <: Number ? [degree for w in ws[start_idx:stop_idx]] : degree
     else
         @assert typeof(degree) <: Number "Setting first_layer_degree and a non-number arg for degree is not supported!"
-        degrees = [[first_layer_degree]; [degree for w in ws[start_idx+1:stop_idx]]]
+        degrees = [[first_layer_degree]; [degree for w in ws[(start_idx+1):stop_idx]]]
     end
 
     layers = []
@@ -86,7 +98,3 @@ function onnx2CROWNNetwork(onnx_file; dtype=Float64, degree=1, first_layer_degre
     # need to convert to tuple?
     return Chain(layers...)
 end
-
-
-
-

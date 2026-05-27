@@ -22,7 +22,10 @@ end
 
 function chebyshev_coefficients(f, degree::Integer)
     N = degree + 1
-    return [2/N * sum([f(cos(π*(k + 0.5) / N)) * cos(π*j*(k + 0.5) / N) for k =0:N-1]) for j = 0:N-1]
+    return [
+        2/N * sum([f(cos(π*(k + 0.5) / N)) * cos(π*j*(k + 0.5) / N) for k = 0:(N-1)]) for
+        j = 0:(N-1)
+    ]
 end
 
 
@@ -31,12 +34,12 @@ function all_chebys(n)
     E = vecOfVec2Mat(collect(0:n))'
 
     # T[0](x) and T[1](x)
-    G[1,1] = 1
-    G[2,2] = 1
-    for i in 3:n+1
+    G[1, 1] = 1
+    G[2, 2] = 1
+    for i = 3:(n+1)
         # increase exponent by one -> shift to right
-        G[i,2:end] .= 2 .* G[i-1,1:end-1]
-        G[i,:] .-= G[i-2,:]
+        G[i, 2:end] .= 2 .* G[i-1, 1:(end-1)]
+        G[i, :] .-= G[i-2, :]
     end
 
     return SparsePolynomial(G, E, [1])

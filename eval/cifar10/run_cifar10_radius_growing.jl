@@ -5,8 +5,18 @@ const NP = NNPoly
 CIFAR_PATH = "./eval/cifar10"
 
 println("precompiling ...")
-solver = PolyCROWN(NP.DiffNNPolySym(common_generators=true))
-properties, times, y_starts, ys, y_hists = verify_vnnlib(solver, CIFAR_PATH, logfile="./eval/cifar10_results_PolyCROWN_radius_growing.jld2",  max_properties=2, print_freq=1, n_steps=10, save_history=true, timeout=3600, force_gc=true)
+solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
+properties, times, y_starts, ys, y_hists = verify_vnnlib(
+    solver,
+    CIFAR_PATH,
+    logfile = "./eval/cifar10_results_PolyCROWN_radius_growing.jld2",
+    max_properties = 2,
+    print_freq = 1,
+    n_steps = 10,
+    save_history = true,
+    timeout = 3600,
+    force_gc = true,
+)
 
 
 current_time = Dates.now()
@@ -16,9 +26,21 @@ patience = 1
 properties = 1:100
 n_unfixed = [27]
 radii = 5:50
-model_paths = [CIFAR_PATH * "/onnx/cifar_relu_6_100_unnormalized.onnx", CIFAR_PATH * "/onnx/cifar_relu_9_200_unnormalized.onnx"]
+model_paths = [
+    CIFAR_PATH * "/onnx/cifar_relu_6_100_unnormalized.onnx",
+    CIFAR_PATH * "/onnx/cifar_relu_9_200_unnormalized.onnx",
+]
 #model_paths = [CIFAR_PATH * "/onnx/cifar_relu_9_200_unnormalized.onnx"]
-params = NP.OptimisationParams(n_steps=typemax(Int), timeout=120., print_freq=25, y_stop=0., save_ys=true, save_times=true, start_lr=0.1, decay=0.98)
+params = NP.OptimisationParams(
+    n_steps = typemax(Int),
+    timeout = 120.0,
+    print_freq = 25,
+    y_stop = 0.0,
+    save_ys = true,
+    save_times = true,
+    start_lr = 0.1,
+    decay = 0.98,
+)
 force_gc = true
 logfile_prefix = "./eval/cifar10/"
 logfile = logfile_prefix * "logs__radii_" * date_string * ".csv"
@@ -30,7 +52,13 @@ open(logfile, "w") do f
 end
 
 for model_path in model_paths
-    net = NP.onnx2CROWNNetwork(model_path, dtype=Float64, degree=1, first_layer_degree=2, add_dummy_output_layer=true)
+    net = NP.onnx2CROWNNetwork(
+        model_path,
+        dtype = Float64,
+        degree = 1,
+        first_layer_degree = 2,
+        add_dummy_output_layer = true,
+    )
 
     for prop in properties
         for n_un in n_unfixed
@@ -50,7 +78,14 @@ for model_path in model_paths
                 input_set, output_set = specs[1]
 
                 net_merged = NP.merge_spec_output_layer(net, output_set)
-                t = @elapsed res, lbs_pcrown, ubs_pcrown = NP.optimise_bounds(solver, net_merged, input_set, params=params, loss_fun=NP.violation_loss, print_results=true)
+                t = @elapsed res, lbs_pcrown, ubs_pcrown = NP.optimise_bounds(
+                    solver,
+                    net_merged,
+                    input_set,
+                    params = params,
+                    loss_fun = NP.violation_loss,
+                    print_results = true,
+                )
 
                 verified = NP.get_sat(lbs_pcrown[end], ubs_pcrown[end])
                 println("\tresult: ", verified)
@@ -61,11 +96,32 @@ for model_path in model_paths
                 end
 
                 #save(logfile_prefix * "/$(model_name)_$(prop)_$(n_un).jld2", "result", verified, "time", t, "t_hist", res.t_hist, "y_hist", res.y_hist)
-                hist_file_name = logfile_prefix * "$(model_name)_$(prop)_$(n_un)_$(r)_hist_" * date_string * ".jld2"
+                hist_file_name =
+                    logfile_prefix *
+                    "$(model_name)_$(prop)_$(n_un)_$(r)_hist_" *
+                    date_string *
+                    ".jld2"
                 save(hist_file_name, "t_hist", res.t_hist, "y_hist", res.y_hist)
 
                 open(logfile, "a") do f
-                    println(f, string(model_name, ", ", prop, ", ", n_un, ",", verified, ", ", t, ", ", length(res.t_hist), ",", hist_file_name))
+                    println(
+                        f,
+                        string(
+                            model_name,
+                            ", ",
+                            prop,
+                            ", ",
+                            n_un,
+                            ",",
+                            verified,
+                            ", ",
+                            t,
+                            ", ",
+                            length(res.t_hist),
+                            ",",
+                            hist_file_name,
+                        ),
+                    )
                 end
 
                 if verified == "unknown"

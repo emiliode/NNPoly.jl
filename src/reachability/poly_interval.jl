@@ -25,9 +25,9 @@ b  - (vector) bias
 """
 function interval_map(W⁻, W⁺, L, U, b)
     Low = exact_addition(linear_map(W⁻, U), linear_map(W⁺, L))
-    Up  = exact_addition(linear_map(W⁻, L), linear_map(W⁺, U))
+    Up = exact_addition(linear_map(W⁻, L), linear_map(W⁺, U))
     Low = translate(Low, b)
-    Up  = translate(Up, b)
+    Up = translate(Up, b)
     return Low, Up
 end
 
@@ -76,11 +76,11 @@ them with intervals.
 function truncate_generators(sp::SparsePolynomial, n_gens::Integer)
     n_gens <= 0 && return sp, sp
 
-    l2s = vec(sum(sp.G .^2, dims=1))
+    l2s = vec(sum(sp.G .^ 2, dims = 1))
     idxs = sortperm(l2s)
 
-    E = @view sp.E[:,idxs[1:n_gens]]
-    if 0 in sum(E, dims=1)
+    E = @view sp.E[:, idxs[1:n_gens]]
+    if 0 in sum(E, dims = 1)
         # the constant term is included, but its truncation has no effect
         # so truncate one more term
         n_gens += 1
@@ -90,7 +90,11 @@ function truncate_generators(sp::SparsePolynomial, n_gens::Integer)
     E = sp.E[:, idxs[1:n_gens]]
     lb, ub = bounds(SparsePolynomial(G, E, sp.ids))
 
-    spt = SparsePolynomial(sp.G[:, idxs[n_gens+1:end]], sp.E[:, idxs[n_gens+1:end]], sp.ids)
+    spt = SparsePolynomial(
+        sp.G[:, idxs[(n_gens+1):end]],
+        sp.E[:, idxs[(n_gens+1):end]],
+        sp.ids,
+    )
     # TODO: most of the time is actually spent doing the translate operations!!!
     spl = translate(spt, lb)
     spu = translate(spt, ub)
@@ -108,23 +112,31 @@ function truncate_common(lp::SparsePolynomial, up::SparsePolynomial, n_gens::Int
 
     @assert lp.E == up.E "Exponent matrices must be equal for common truncation!"
 
-    l2s = vec(sum(lp.G .^2 .+ up.G .^2, dims=1))
+    l2s = vec(sum(lp.G .^ 2 .+ up.G .^ 2, dims = 1))
     idxs = sortperm(l2s)
 
-    E = @view lp.E[:,idxs[1:n_gens]]
-    if 0 in sum(E, dims=1)
+    E = @view lp.E[:, idxs[1:n_gens]]
+    if 0 in sum(E, dims = 1)
         n_gens += 1
     end
 
     E = lp.E[:, idxs[1:n_gens]]
-    Gₗ = lp.G[:,idxs[1:n_gens]]
-    Gᵤ = up.G[:,idxs[1:n_gens]]
+    Gₗ = lp.G[:, idxs[1:n_gens]]
+    Gᵤ = up.G[:, idxs[1:n_gens]]
 
     ll, lu = bounds(SparsePolynomial(Gₗ, E, lp.ids))
     ul, uu = bounds(SparsePolynomial(Gᵤ, E, up.ids))
 
-    lp_trunc = SparsePolynomial(lp.G[:,idxs[n_gens+1:end]], lp.E[:,idxs[n_gens+1:end]], lp.ids)
-    up_trunc = SparsePolynomial(up.G[:,idxs[n_gens+1:end]], up.E[:,idxs[n_gens+1:end]], up.ids)
+    lp_trunc = SparsePolynomial(
+        lp.G[:, idxs[(n_gens+1):end]],
+        lp.E[:, idxs[(n_gens+1):end]],
+        lp.ids,
+    )
+    up_trunc = SparsePolynomial(
+        up.G[:, idxs[(n_gens+1):end]],
+        up.E[:, idxs[(n_gens+1):end]],
+        up.ids,
+    )
 
     l̂p = translate(lp_trunc, ll)
     ûp = translate(up_trunc, uu)

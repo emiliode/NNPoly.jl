@@ -4,7 +4,7 @@ function merge_spec_output_layer(net::Chain, output_spec::HPolytope)
     layers = [L for L in net.layers]
 
     weights = net[end].weights
-    biases  = net[end].bias
+    biases = net[end].bias
 
     A, b = tosimplehrep(output_spec)
 

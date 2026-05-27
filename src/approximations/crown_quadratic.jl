@@ -33,10 +33,28 @@ function relax_relu_crown_quad_lower_matrix(l, u)
     inactive = (u .<= 0)
     active = (l .>= 0)
 
-    c₁ = ifelse.(inactive, zero(eltype(l)), 
-            ifelse.(active, one(eltype(l)), 
-                ifelse.(u .>= .-2 .* l, one(eltype(l)), ifelse.((.-l .< u) .& (u .< .-2 .* l), .- l .* u ./ (u .^2 .- l .* u), zero(eltype(l))))))
-    c₂ = ifelse.(active .| inactive, zero(eltype(l)), ifelse.((.-l .< u) .& (u .< .-2 .* l), u ./ (u.^2 .- l .* u), zero(eltype(l))))
+    c₁ = ifelse.(
+        inactive,
+        zero(eltype(l)),
+        ifelse.(
+            active,
+            one(eltype(l)),
+            ifelse.(
+                u .>= .-2 .* l,
+                one(eltype(l)),
+                ifelse.(
+                    (.-l .< u) .& (u .< .-2 .* l),
+                    .- l .* u ./ (u .^ 2 .- l .* u),
+                    zero(eltype(l)),
+                ),
+            ),
+        ),
+    )
+    c₂ = ifelse.(
+        active .| inactive,
+        zero(eltype(l)),
+        ifelse.((.-l .< u) .& (u .< .-2 .* l), u ./ (u .^ 2 .- l .* u), zero(eltype(l))),
+    )
 
     return hcat(zero(l), c₁, c₂)
 end
@@ -83,12 +101,24 @@ end
 
 
 function relax_relu_crown_quad_upper_matrix(l, u)
-    w2 = (l .- u).^2
+    w2 = (l .- u) .^ 2
     inactive = (u .<= 0)
     active = (l .>= 0)
     cond = (.-l .<= u)
-    c₀ = ifelse.(inactive .| active, zero(eltype(l)), ifelse.(cond, .- l .* u.^2, l.^2 .* u) ./ w2)
-    c₁ = ifelse.(inactive, zero(eltype(l)), ifelse.(active, one(eltype(l)), ifelse.(cond, l.^2 .+ u.^2, .-2 .* l .* u) ./ w2)) 
+    c₀ = ifelse.(
+        inactive .| active,
+        zero(eltype(l)),
+        ifelse.(cond, .- l .* u .^ 2, l .^ 2 .* u) ./ w2,
+    )
+    c₁ = ifelse.(
+        inactive,
+        zero(eltype(l)),
+        ifelse.(
+            active,
+            one(eltype(l)),
+            ifelse.(cond, l .^ 2 .+ u .^ 2, .-2 .* l .* u) ./ w2,
+        ),
+    )
     c₂ = ifelse.(inactive .| active, zero(eltype(l)), ifelse.(cond, .- l, u) ./ w2)
 
     return hcat(c₀, c₁, c₂)

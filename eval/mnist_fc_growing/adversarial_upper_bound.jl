@@ -25,31 +25,46 @@ for row in CSV.File("./eval/mnist_fc_growing/logs.csv")
         last_prop = prop
 
         mnist_path = "./eval/mnist_fc/onnx/" * net
-        mnist = NP.onnx2CROWNNetwork(mnist_path, dtype=Float64)
+        mnist = NP.onnx2CROWNNetwork(mnist_path, dtype = Float64)
 
-        for n_un in row.n_unfixed:50
+        for n_un = row.n_unfixed:50
             vnnlib_path = "./eval/mnist_fc/vnnlib/prop_$(row.property)_spiral_$(n_un).vnnlib"
             rv = NP.read_vnnlib_simple(vnnlib_path, 784, 10);
             specs = NP.generate_specs(rv);
             input_set, output_set = specs[1]
 
             A, b = tosimplehrep(output_set)
-            y_true = findfirst(x -> x < 0, A[1,:])
+            y_true = findfirst(x -> x < 0, A[1, :])
 
-            x_attack, y_attack = pgd(mnist, input_set, y_true=y_true, n_restarts=10, verbosity=0, n_iter=1000)
+            x_attack, y_attack = pgd(
+                mnist,
+                input_set,
+                y_true = y_true,
+                n_restarts = 10,
+                verbosity = 0,
+                n_iter = 1000,
+            )
 
             if y_attack != y_true
                 open(logfile, "a") do f
                     println(f, string(net, ", ", prop, ", ", n_un, ",sat"))
                 end
 
-                println("######## net ", net, ", prop ", row.property, " SAT for spiral size ", n_un, " ############")
+                println(
+                    "######## net ",
+                    net,
+                    ", prop ",
+                    row.property,
+                    " SAT for spiral size ",
+                    n_un,
+                    " ############",
+                )
                 break
             end
 
             println("## no counterexample found for spiral size ", n_un)
 
-            if n_un == 50 && y_attack == y_true 
+            if n_un == 50 && y_attack == y_true
                 open(logfile, "a") do f
                     println(f, string(net, ", ", prop, ", ", n_un, ",unknown"))
                 end

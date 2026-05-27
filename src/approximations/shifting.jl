@@ -17,16 +17,21 @@ args:
 returns:
     coefficients of the polynomial lower relaxation
 """
-function get_lower_polynomial_shift(lb::N, ub::N, degree::Integer, c::AbstractVector{<:N}) where N <: Number
+function get_lower_polynomial_shift(
+    lb::N,
+    ub::N,
+    degree::Integer,
+    c::AbstractVector{<:N},
+) where {N<:Number}
     if ub <= 0
         return zeros(degree + 1)
     elseif lb >= 0
-        return (1:degree + 1 .== 2)
+        return (1:(degree+1) .== 2)
     end
 
     # only need x, x², x³, ... coefficient, bias gets adjusted by shift anyways
-    ĉ = [0.; c]
-    e₂ = (1:degree + 1 .== 2)
+    ĉ = [0.0; c]
+    e₂ = (1:(degree+1) .== 2)
 
     # want p(x) ≤ ReLU(x) --> u = max p(x) - ReLU(x)
     # --> p(x) - ReLU(x) ≤ u --> p(x) - u ≤ ReLU(x)
@@ -34,7 +39,7 @@ function get_lower_polynomial_shift(lb::N, ub::N, degree::Integer, c::AbstractVe
     lᵤ, uᵤ = calculate_extrema(ĉ .- e₂, 0, ub) # p(x) - x
 
     u = max(uₗ, uᵤ)
-    e₁ = (1:degree + 1 .== 1)
+    e₁ = (1:(degree+1) .== 1)
     return ĉ .- u .* e₁
 end
 
@@ -56,16 +61,21 @@ args:
 returns:
     coefficients of the polynomial upper relaxation
 """
-function get_upper_polynomial_shift(lb::N, ub::N, degree::Integer, c::AbstractVector{<:N}) where N <: Number
+function get_upper_polynomial_shift(
+    lb::N,
+    ub::N,
+    degree::Integer,
+    c::AbstractVector{<:N},
+) where {N<:Number}
     if ub <= 0
         return zeros(degree + 1)
     elseif lb >= 0
-        return (1:degree + 1 .== 2)
+        return (1:(degree+1) .== 2)
     end
 
     # only need x, x², x³, ... coefficient, bias gets adjusted by shift anyways
-    ĉ = [0.; c]
-    e₂ = (1:degree + 1 .== 2)
+    ĉ = [0.0; c]
+    e₂ = (1:(degree+1) .== 2)
 
     # want p(x) ≥ ReLU(x) --> l = min p(x) - ReLU(x)
     # --> p(x) - ReLU(x) ≥ l --> p(x) - l ≥ ReLU(x)
@@ -73,52 +83,62 @@ function get_upper_polynomial_shift(lb::N, ub::N, degree::Integer, c::AbstractVe
     lᵤ, uᵤ = calculate_extrema(ĉ .- e₂, 0, ub) # p(x) - x
 
     l = min(lₗ, lᵤ)
-    e₁ = (1:degree + 1 .== 1)
+    e₁ = (1:(degree+1) .== 1)
     return ĉ .- l .* e₁
 end
 
 
-function get_lower_polynomial_shift(lb::AbstractVector, ub::AbstractVector, degree, C::AbstractMatrix)
+function get_lower_polynomial_shift(
+    lb::AbstractVector,
+    ub::AbstractVector,
+    degree,
+    C::AbstractMatrix,
+)
     n = size(C, 1)
     Ĉ = [zeros(n) C]
 
-    e₁ = (1:degree + 1 .== 1)
-    e₂ = (1:degree + 1 .== 2)
+    e₁ = (1:(degree+1) .== 1)
+    e₂ = (1:(degree+1) .== 2)
 
     crossing = (lb .< 0) .& (ub .> 0)
     fixed_active = lb .>= 0
 
     if sum(crossing) > 0
-        uₗ = poly_maximum(Ĉ[crossing,:], lb[crossing], 0)
-        uᵤ = poly_maximum(Ĉ[crossing,:] .- e₂', 0, ub[crossing])
+        uₗ = poly_maximum(Ĉ[crossing, :], lb[crossing], 0)
+        uᵤ = poly_maximum(Ĉ[crossing, :] .- e₂', 0, ub[crossing])
 
         u = max.(uₗ, uᵤ)
     else
         u = 0
     end
     #return (Ĉ .- l .* e₁') .* crossing .+ e₂' .* fixed_active
-    return I(n)[:,crossing] * (Ĉ[crossing,:] .- u .* e₁') .+ e₂' .* fixed_active
+    return I(n)[:, crossing] * (Ĉ[crossing, :] .- u .* e₁') .+ e₂' .* fixed_active
 end
 
 
-function get_upper_polynomial_shift(lb::AbstractVector, ub::AbstractVector, degree, C::AbstractMatrix)
+function get_upper_polynomial_shift(
+    lb::AbstractVector,
+    ub::AbstractVector,
+    degree,
+    C::AbstractMatrix,
+)
     n = size(C, 1)
     Ĉ = [zeros(n) C]
 
-    e₁ = (1:degree + 1 .== 1)
-    e₂ = (1:degree + 1 .== 2)
+    e₁ = (1:(degree+1) .== 1)
+    e₂ = (1:(degree+1) .== 2)
 
     crossing = (lb .< 0) .& (ub .> 0)
     fixed_active = lb .>= 0
 
     if sum(crossing) > 0
-        lₗ = poly_minimum(Ĉ[crossing,:], lb[crossing], 0)
-        lᵤ = poly_minimum(Ĉ[crossing,:] .- e₂', 0, ub[crossing])
+        lₗ = poly_minimum(Ĉ[crossing, :], lb[crossing], 0)
+        lᵤ = poly_minimum(Ĉ[crossing, :] .- e₂', 0, ub[crossing])
 
         l = min.(lₗ, lᵤ)
     else
         l = 0
     end
     #return (Ĉ .- l .* e₁') .* crossing .+ e₂' .* fixed_active
-    return I(n)[:,crossing] * (Ĉ[crossing,:] .- l .* e₁') .+ e₂' .* fixed_active
+    return I(n)[:, crossing] * (Ĉ[crossing, :] .- l .* e₁') .+ e₂' .* fixed_active
 end

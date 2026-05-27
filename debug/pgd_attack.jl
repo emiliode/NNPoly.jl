@@ -14,7 +14,7 @@ function expand_unfixed_inputs(x, y, mask)
 end
 
 
-function pgd_lbfgs(model, lb, ub, y_true; verbosity=0, n_iter=100)
+function pgd_lbfgs(model, lb, ub, y_true; verbosity = 0, n_iter = 100)
     mask = lb .!= ub  # unfixed entries
 
     lossfun = x -> begin
@@ -34,9 +34,9 @@ function pgd_lbfgs(model, lb, ub, y_true; verbosity=0, n_iter=100)
     #x₀ = (0.5 .* (lb .+ ub))[mask]
     #opt = Fminbox(LBFGS())
     opt = LBFGS()
-    options = Optim.Options(show_trace = verbosity > 0, iterations=n_iter)
+    options = Optim.Options(show_trace = verbosity > 0, iterations = n_iter)
     res = optimize(lossfun, g!, x₀, opt, options)
-    
+
     x_stretch = lb[mask] .+ Flux.σ.(Optim.minimizer(res)) .* (ub[mask] .- lb[mask])
     return expand_unfixed_inputs(x_stretch, lb, mask), res
 end
@@ -46,11 +46,11 @@ end
 mnist_path = "./eval/mnist_fc/onnx/mnist-net_256x4.onnx"
 vnnlib_path = "./eval/mnist_fc/vnnlib/prop_2_spiral_49.vnnlib"
 
-model = NP.onnx2CROWNNetwork(mnist_path, dtype=Float64)
+model = NP.onnx2CROWNNetwork(mnist_path, dtype = Float64)
 
 rv = NP.read_vnnlib_simple(vnnlib_path, 784, 10);
 specs = NP.generate_specs(rv);
 input_set, output_set = specs[1]
 
 A, b = tosimplehrep(output_set)
-y_true = findfirst(x -> x < 0, A[1,:]);
+y_true = findfirst(x -> x < 0, A[1, :]);

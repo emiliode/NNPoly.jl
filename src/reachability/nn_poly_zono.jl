@@ -28,16 +28,18 @@ function NV.forward_act(solver::NNPolyZono, L::NV.Layer{NV.ReLU}, input::SparseP
         @assert false string("Chebyshev is the only valid approximation yet!")
     end
 
-    ŝ = quadratic_propagation(cs[:,3], cs[:,2], cs[:,1], s)
+    ŝ = quadratic_propagation(cs[:, 3], cs[:, 2], cs[:, 1], s)
 
     crossing_idxs = findall(ϵs .!= 0)
     n_crossing = length(crossing_idxs)
     n, m = size(ŝ.G)
     n_vars = length(ŝ.ids)
     G = [ŝ.G ϵs .* partial_I(n, crossing_idxs)]
-    E = [ŝ.E                           zeros(Integer, n_vars, n_crossing);
-         zeros(Integer, n_crossing, m) I                             ]
-    ids = [ŝ.ids; maximum(ŝ.ids)+1:maximum(ŝ.ids)+n_crossing]
+    E = [
+        ŝ.E zeros(Integer, n_vars, n_crossing);
+        zeros(Integer, n_crossing, m) I
+    ]
+    ids = [ŝ.ids; (maximum(ŝ.ids)+1):(maximum(ŝ.ids)+n_crossing)]
     return SparsePolynomial(G, E, ids)
 end
 

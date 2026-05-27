@@ -2,7 +2,7 @@
 @with_kw mutable struct OptimisationParams
     n_steps::Int=100
     # timeout in seconds
-    timeout::Float64=60.
+    timeout::Float64=60.0
     # number of iterations w/o improvement before early stopping
     patience::Int=50
     gradient_tol::Float64=1e-5
@@ -10,7 +10,7 @@
     y_stop::Float64=-Inf
     # learning rate scheduling
     start_lr::Float64=1e-3
-    decay::Float64=1.
+    decay::Float64=1.0
     min_lr::Float64=1e-3
     # console output
     verbosity::Int=1
@@ -78,7 +78,7 @@ kwargs:
     gradient_tol - if ||∇f|| < gradient_tol, stop optimisation
     patience - early stopping if the objective didn't improve in the last patience steps
 """
-function optimise(f, opt, x₀; params=OptimisationParams())
+function optimise(f, opt, x₀; params = OptimisationParams())
     t_start = time()
 
     x = copy(x₀)
@@ -87,7 +87,7 @@ function optimise(f, opt, x₀; params=OptimisationParams())
     x_best = x
     y_best = Inf
     steps_no_improvement = 0
-    csim = 1.
+    csim = 1.0
     last_update = zero(x₀)
     y_hist = Float64[]
     t_hist = Float64[]
@@ -95,7 +95,7 @@ function optimise(f, opt, x₀; params=OptimisationParams())
     d_hist = Float64[]
     csims = params.save_cosine_similarity ? [csim] : Float64[]
 
-    for i in 1:params.n_steps
+    for i = 1:params.n_steps
         last_x = copy(x)
         ŷ, g = withgradient(f, x)
         # Zygote treats nothing as zero
@@ -122,10 +122,19 @@ function optimise(f, opt, x₀; params=OptimisationParams())
             println("Stopping criterion reached! y = ", y, " ≤ ", params.y_stop)
             break
         elseif grad_norm < params.gradient_tol
-            println("Optimisation converged! ||∇f|| = ", grad_norm, " < ", params.gradient_tol)
+            println(
+                "Optimisation converged! ||∇f|| = ",
+                grad_norm,
+                " < ",
+                params.gradient_tol,
+            )
             break
         elseif steps_no_improvement > params.patience
-            println("No improvement over the last ", params.patience, " iterations. Stopping early.")
+            println(
+                "No improvement over the last ",
+                params.patience,
+                " iterations. Stopping early.",
+            )
             break
         elseif elapsed_time >= params.timeout
             println("Timeout reached (", elapsed_time, " elapsed)")
@@ -146,11 +155,20 @@ function optimise(f, opt, x₀; params=OptimisationParams())
         if i % params.print_freq == 0
             println(i, ": ", y, " - ||∇f|| = ", grad_norm)
             params.verbosity > 1 && println("\t ||xᵢ - xᵢ₊₁|| = ", norm(last_x .- x))
-            params.verbosity > 1 && params.save_cosine_similarity && println("\t cos-similarity = ", csim)
+            params.verbosity > 1 &&
+                params.save_cosine_similarity &&
+                println("\t cos-similarity = ", csim)
         end
     end
 
-    return (x_opt=x_best, y_hist=y_hist, t_hist=t_hist, g_hist=g_hist, d_hist=d_hist, csims=csims)
+    return (
+        x_opt = x_best,
+        y_hist = y_hist,
+        t_hist = t_hist,
+        g_hist = g_hist,
+        d_hist = d_hist,
+        csims = csims,
+    )
 end
 
 
@@ -162,11 +180,13 @@ args:
     model - a Flux Chain with optimisable parameters
     opt - optimiser to use (all Optimisers.jl are supported)
 """
-function optimise(f, model::Chain, opt; params=OptimisationParams())
+function optimise(f, model::Chain, opt; params = OptimisationParams())
     # TODO: is there an abstract type for all Flux models, not just Chain?
     t_start = time()
-    
-    sched = ParameterSchedulers.Stateful(ExpDecayClipped(params.start_lr, params.decay, params.min_lr))
+
+    sched = ParameterSchedulers.Stateful(
+        ExpDecayClipped(params.start_lr, params.decay, params.min_lr),
+    )
     state_tree = Optimisers.setup(opt, model)
 
     # x_best = x  # how can we get the best params?
@@ -178,7 +198,7 @@ function optimise(f, model::Chain, opt; params=OptimisationParams())
     #mem_before = Sys.free_memory() / 2^20
     #@show mem_before
 
-    for i in 1:params.n_steps
+    for i = 1:params.n_steps
         y, ∇model = withgradient(model) do m
             f(m)
         end
@@ -198,7 +218,11 @@ function optimise(f, model::Chain, opt; params=OptimisationParams())
             println(i, ": Stopping criterion reached! y = ", y, " ≤ ", params.y_stop)
             break
         elseif steps_no_improvement > params.patience
-            println("No improvement over the last ", params.patience, " iterations. Stopping early.")
+            println(
+                "No improvement over the last ",
+                params.patience,
+                " iterations. Stopping early.",
+            )
             break
         elseif elapsed_time >= params.timeout
             println("Timeout reached (", elapsed_time, " elapsed)")
@@ -225,5 +249,5 @@ function optimise(f, model::Chain, opt; params=OptimisationParams())
     end
 
     # don't really need to return params here since they should be modified in-place in the model
-    return (y_hist=y_hist, t_hist=t_hist)
+    return (y_hist = y_hist, t_hist = t_hist)
 end

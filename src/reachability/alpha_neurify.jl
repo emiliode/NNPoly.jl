@@ -99,13 +99,19 @@ function vec2propagation(net, α::AbstractVector)
     extended_layer_sizes = [0; layer_sizes]
     cls = cumsum(extended_layer_sizes)
 
-    return [α[cls[i]+1:cls[i+1]] for i in 1:length(layer_sizes)]
+    return [α[(cls[i]+1):cls[i+1]] for i = 1:length(layer_sizes)]
 end
 
 
 # here αs is a vector! (in contrast to forward_network)
 # different bounding than for polynomials
-function propagate(solver::AlphaNeurify, net::NV.NetworkNegPosIdx, input, αs; printing=false)
+function propagate(
+    solver::AlphaNeurify,
+    net::NV.NetworkNegPosIdx,
+    input,
+    αs;
+    printing = false,
+)
     α = vec2propagation(net, αs)
     s = forward_network(solver, net, input, α)
 
@@ -121,16 +127,26 @@ function propagate(solver::AlphaNeurify, net::NV.NetworkNegPosIdx, input, αs; p
 end
 
 
-function propagate(solver::AlphaNeurify, net::NV.NetworkNegPosIdx, input::AbstractHyperrectangle, αs; printing=false)
+function propagate(
+    solver::AlphaNeurify,
+    net::NV.NetworkNegPosIdx,
+    input::AbstractHyperrectangle,
+    αs;
+    printing = false,
+)
     s = init_symbolic_interval_diff(net, input)
-    return propagate(solver, net, s, αs, printing=printing)
+    return propagate(solver, net, s, αs, printing = printing)
 end
 
 
 """
 Initialize the symbolic domain corresponding to the given solver with the respective input set.
 """
-function initialize_symbolic_domain(solver::AlphaNeurify, net::NV.NetworkNegPosIdx, input::AbstractHyperrectangle)
+function initialize_symbolic_domain(
+    solver::AlphaNeurify,
+    net::NV.NetworkNegPosIdx,
+    input::AbstractHyperrectangle,
+)
     return init_symbolic_interval_diff(net, input)
 end
 
@@ -140,25 +156,36 @@ Initialize slopes for lower ReLU relaxation using DeepPoly heuristic.
 
 The degree argument is not relevant as AlphaNeurify only uses linear relaxations.
 """
-function initialize_params(solver::AlphaNeurify, net::NV.NetworkNegPosIdx, degree::N, input) where N<:Number
+function initialize_params(
+    solver::AlphaNeurify,
+    net::NV.NetworkNegPosIdx,
+    degree::N,
+    input,
+) where {N<:Number}
     n_neurons = sum(length(l.bias) for l in net.layers)
     α = zeros(n_neurons)
     αs = vec2propagation(net, α)
-    isolver = AlphaNeurify(initialize=true, use_tightened_bounds=solver.use_tightened_bounds)
+    isolver =
+        AlphaNeurify(initialize = true, use_tightened_bounds = solver.use_tightened_bounds)
     ŝ = forward_network(isolver, net, input, αs)
     # convert back to vector
     return reduce(vcat, vec.(αs))
 end
 
 
-function optimise_bounds(solver::AlphaNeurify, net::NV.NetworkNegPosIdx, input_set; opt=nothing,
-                         params=OptimisationParams())
-    opt = isnothing(opt) ? OptimiserChain(Adam(), Projection(0., 1.)) : opt
+function optimise_bounds(
+    solver::AlphaNeurify,
+    net::NV.NetworkNegPosIdx,
+    input_set;
+    opt = nothing,
+    params = OptimisationParams(),
+)
+    opt = isnothing(opt) ? OptimiserChain(Adam(), Projection(0.0, 1.0)) : opt
     s = init_symbolic_interval_diff(net, input_set)
 
     α0 = initialize_params(solver, net, 1, s)
 
     optfun = α -> propagate(solver, net, s, α)
 
-    res = optimise(optfun, opt, α0, params=params)
+    res = optimise(optfun, opt, α0, params = params)
 end

@@ -20,9 +20,9 @@ end
 """
 find real roots to the cubic problem ax³+bx²+cx+d = 0 using Cardano's formula
 """
-function cardano_roots(a,b,c,d; only_real_roots=false)
+function cardano_roots(a, b, c, d; only_real_roots = false)
     cbr₁ = (-0.5 - 0.5*sqrt(3)im)  # cube root of 1
-                                   # do we need it for finding all solutions?
+    # do we need it for finding all solutions?
     q = (3*a*c - b^2) / (9*a^2)
     r = (9*a*b*c - 27*a^2*d - 2*b^3) / (54*a^3)
 
@@ -66,7 +66,7 @@ returns
     y_opt ([Number]) - values of p at x_opt
 """
 function calculate_critical_points(sp::SparsePolynomial)
-    @assert size(sp.G, 1) == 1  string("only one-dimsional polynomials!")
+    @assert size(sp.G, 1) == 1 string("only one-dimsional polynomials!")
     @assert length(sp.ids) == 1 string("only univariate polynomials!")
     cs = get_monomial_coefficients(sp)
 
@@ -84,7 +84,7 @@ returns
     x_opt ([Number]) - positions of extrema of p
     y_opt ([Number]) - values of p at x_opt
 """
-function calculate_critical_points(cs::AbstractVector{<:T}) where T
+function calculate_critical_points(cs::AbstractVector{<:T}) where {T}
     # one coefficient -> constant, 2 coeffs -> linear, 3 coeffs -> quadratic, ...
 
     # if terms for last x^n are zero, then it is only n-k degree polynomial!
@@ -110,7 +110,7 @@ function calculate_critical_points(cs::AbstractVector{<:T}) where T
         # cs[4]*x³ + cs[3]*x² + cs[2]*x + cs[1]
         x_opt = quadratic_roots(3*cs[4], 2*cs[3], cs[2])
     elseif idx == 5 # length(cs) == 5
-        x_opt = cardano_roots(4*cs[5], 3*cs[4], 2*cs[3], cs[2], only_real_roots=true)
+        x_opt = cardano_roots(4*cs[5], 3*cs[4], 2*cs[3], cs[2], only_real_roots = true)
     else
         throw(ArgumentError("Polynomial has degree larger than 4! p = $p"))
     end
@@ -118,7 +118,7 @@ function calculate_critical_points(cs::AbstractVector{<:T}) where T
     # Zygote can't handle broadcast with empty input p.([])
     length(x_opt) == 0 && return Vector{T}(), Vector{T}()
 
-    p = x -> cs' * [x^i for i in 0:length(cs) - 1]
+    p = x -> cs' * [x^i for i = 0:(length(cs)-1)]
     y_opt = p.(x_opt)
     return x_opt, y_opt
 end
@@ -144,7 +144,7 @@ Returns the minimum and maximum value of p(x) over the domain.
 function calculate_extrema(cs, lb, ub)
     x_opt, y_opt = calculate_critical_points(cs)
 
-    p = x -> cs' * [x^i for i in 0:length(cs) - 1]
+    p = x -> cs' * [x^i for i = 0:(length(cs)-1)]
     yₗ = p(lb)
     yᵤ = p(ub)
 
@@ -164,10 +164,10 @@ end
 Calculates x_min, the minimizer of a polynomial p(x) = c₁ + c₂x + c₃x² + ...
 s.t. p(x_min) = y_min, the minimum on interval [l, u].
 """
-function poly_minimizer(cs::AbstractVector, l::N, u::N) where N<:Number
+function poly_minimizer(cs::AbstractVector, l::N, u::N) where {N<:Number}
     x_opt, y_opt = calculate_critical_points(cs)
 
-    p = x -> cs' * [x^i for i in 0:length(cs) - 1]
+    p = x -> cs' * [x^i for i = 0:(length(cs)-1)]
     yₗ = p(l)
     yᵤ = p(u)
 
@@ -195,35 +195,36 @@ function conditions_poly_minimizer(C, l, u, x, z)
     # if x really is the minimizer, it is the fixed point of projected gradient descent.
     n = size(C, 2) - 1
     # coeffs of derivative
-    dC = C[:,2:end] .* (1:n)'
-    x_powers = reduce(hcat, [x.^k for k in 0:n-1])
-    ∇ₓp = sum(dC .* x_powers, dims=2)
+    dC = C[:, 2:end] .* (1:n)'
+    x_powers = reduce(hcat, [x .^ k for k = 0:(n-1)])
+    ∇ₓp = sum(dC .* x_powers, dims = 2)
 
     η = 0.01
     return x .- clamp.(x .- η * ∇ₓp, l, u)
 end
 
-conditions_poly_minimizer(y::ComponentArray, x, z) = conditions_poly_minimizer(y.C, y.l, y.u, x, z)
+conditions_poly_minimizer(y::ComponentArray, x, z) =
+    conditions_poly_minimizer(y.C, y.l, y.u, x, z)
 
 implicit_poly_min = ImplicitFunction(forward_poly_minimizer, conditions_poly_minimizer)
 
 
 function poly_minimum_quad(C, l, u)
     @assert size(C, 2) == 3 "only quadratic polynomials are allowed in poly_minimum_quad!!!"
-    div0mask = C[:,3] .== 0
+    div0mask = C[:, 3] .== 0
     # if c₂ == 0 then l (if min at u, it is overwritten later on by comparison with y_bounds) else -c₁ / (2c₂) for quadratics
     # still need ... .+ div0mask .* 1 for avoiding NaN in the backward pass. 
     # Since ifelse is branchless, Zygote evaluates both branches and adds the results back together, which
     # would propagate the NaN to the overall gradient if there is NaN in the div0 branch
-    x_opt = ifelse.(div0mask, l, .- C[:,2] ./ (2 .* C[:,3] .+ div0mask .* 1))  
-    
-    X = [zero(x_opt) .+ 1 x_opt x_opt .^2]
-    L = [zero(l) .+ 1 l l .^2]
-    U = [zero(u) .+ 1 u u .^2]
+    x_opt = ifelse.(div0mask, l, .- C[:, 2] ./ (2 .* C[:, 3] .+ div0mask .* 1))
 
-    Yx = sum(C .* X, dims=2)
-    Yl = sum(C .* L, dims=2)
-    Yu = sum(C .* U, dims=2)
+    X = [zero(x_opt) .+ 1 x_opt x_opt .^ 2]
+    L = [zero(l) .+ 1 l l .^ 2]
+    U = [zero(u) .+ 1 u u .^ 2]
+
+    Yx = sum(C .* X, dims = 2)
+    Yl = sum(C .* L, dims = 2)
+    Yu = sum(C .* U, dims = 2)
 
     xmask = (l .<= x_opt) .& (x_opt .<= u)
     y_bounds = min.(Yl, Yu)
@@ -254,8 +255,8 @@ function poly_minimum(C::AbstractMatrix, l, u)
     else
         args = comp_vec_clu(C, l, u)
         x_opt = (first ∘ implicit_poly_min)(args)
-        x_powers = reduce(hcat, [x_opt.^k for k in 0:size(C,2)-1])
-        y_opt = sum(C .* x_powers, dims=2)
+        x_powers = reduce(hcat, [x_opt .^ k for k = 0:(size(C, 2)-1)])
+        y_opt = sum(C .* x_powers, dims = 2)
     end
 
     return y_opt
@@ -280,7 +281,14 @@ poly_maximum(C, l, u) = .-poly_minimum(.-C, l, u)
 Computes an upper bound for the maximum of a sparse polynomial in direction d
 by branch and bound on the largest generator up to a certain number of steps.
 """
-function max_in_dir_bab(d, sp::SparsePolynomial; max_steps=10, optimality_gap=1e-3, tol=1e-6, printing=false)
+function max_in_dir_bab(
+    d,
+    sp::SparsePolynomial;
+    max_steps = 10,
+    optimality_gap = 1e-3,
+    tol = 1e-6,
+    printing = false,
+)
     p = linear_map(d', sp)
 
     # as all variables are normalized to [-1, 1], the center is the vector of all zeros
@@ -293,7 +301,7 @@ function max_in_dir_bab(d, sp::SparsePolynomial; max_steps=10, optimality_gap=1e
     lb = evaluate(p, center)[1]
     enqueue!(queue, p, ub)
 
-    for i in 1:max_steps
+    for i = 1:max_steps
 
         if ub - lb <= optimality_gap
             printing && println("Found optimal value ∈ ", [lb, ub])

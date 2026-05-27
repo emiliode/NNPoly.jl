@@ -8,13 +8,13 @@ c₁ + c₂x + c₃x² + ... + cₙxⁿ with n = max_degree
 
 optional: make coefficient vector have entries up to max_degree (has to be larger than n₁ + n₂)
 """
-function multi_binomial(l, u, n₁, n₂; max_degree=-1)
+function multi_binomial(l, u, n₁, n₂; max_degree = -1)
     max_degree = max(max_degree, n₁ + n₂)
     cs = zeros(max_degree + 1)
-    for k₁ in 0:n₁
-        for k₂ in 0:n₂
-            c = binomial(n₁, k₁)*binomial(n₂, k₂) * (-l)^(n₁ - k₁) * u^(n₂ - k₂)
-            cs[k₁ + k₂ + 1] += k₂ % 2 == 0 ? c : -c
+    for k₁ = 0:n₁
+        for k₂ = 0:n₂
+            c = binomial(n₁, k₁) * binomial(n₂, k₂) * (-l)^(n₁ - k₁) * u^(n₂ - k₂)
+            cs[k₁+k₂+1] += k₂ % 2 == 0 ? c : -c
         end
     end
     return cs
@@ -31,7 +31,7 @@ Note the multi-binomial theorem for this instance:
 With this function, we calculate one summation term.
 """
 function single_multi_binomial(l, u, n₁, n₂, k₁, k₂)
-    return binomial(n₁, k₁)*binomial(n₂, k₂)*(-1)^k₂ * (-l)^(n₁ - k₁) * u^(n₂ - k₂)
+    return binomial(n₁, k₁) * binomial(n₂, k₂) * (-1)^k₂ * (-l)^(n₁ - k₁) * u^(n₂ - k₂)
 end
 
 
@@ -66,7 +66,7 @@ Example: (for degree = 2)
     2   0
 """
 function get_exponent_pairs(degree)
-    return [(n₁, n₂) for n₁ in 0:degree for n₂ in 0:degree - n₁]
+    return [(n₁, n₂) for n₁ = 0:degree for n₂ = 0:(degree-n₁)]
 end
 
 # the function is not differentiable
@@ -82,11 +82,14 @@ p(x) = ∑ sᵢ (x-l)ⁿ(u-x)ᵐ, where n = 0,..,d and m = 0,...,d-n
 function get_handelman_coefficients(l, u, degree)
     #idxs = Tuple{Int, Int}[]
     #ChainRulesCore.ignore_derivatives() do
-        # Zygote doesn't like this list comprehension
+    # Zygote doesn't like this list comprehension
     #    idxs = [(n₁, n₂) for n₁ in 0:degree for n₂ in 0:degree - n₁]
     #end
     idxs = get_exponent_pairs(degree)
-    A = map(x -> elemwise_multi_binomial(l, u, x[1], x[2], x[3]), [(d,i,j) for d in 0:degree, (i,j) in idxs])
+    A = map(
+        x -> elemwise_multi_binomial(l, u, x[1], x[2], x[3]),
+        [(d, i, j) for d = 0:degree, (i, j) in idxs],
+    )
     return A
 end
 
@@ -131,7 +134,7 @@ returns:
 function get_upper_polynomial(lb, ub, degree, s, t)
     if lb >= 0
         # differentiable way to get unit vector
-        e₂ = (1:degree+1 .== 2)
+        e₂ = (1:(degree+1) .== 2)
         return e₂
     elseif ub <= 0
         return zeros(degree + 1)
@@ -140,15 +143,15 @@ function get_upper_polynomial(lb, ub, degree, s, t)
     Aₗ = get_handelman_coefficients(lb, 0, degree)
     Aᵤ = get_handelman_coefficients(0, ub, degree)
 
-    e₂ = (1:degree + 1 .== 2)
-    cl = Aₗ*s.^2
-    cu = Aᵤ*t.^2 .+ e₂
+    e₂ = (1:(degree+1) .== 2)
+    cl = Aₗ*s .^ 2
+    cu = Aᵤ*t .^ 2 .+ e₂
     l, u = calculate_extrema(cu .- cl, lb, ub)
 
     λ = NV.relaxed_relu_gradient(l, u)
     β = -l
 
-    e₁ = (1:degree + 1 .== 1)   # basis vector [1,0,0,...]
+    e₁ = (1:(degree+1) .== 1)   # basis vector [1,0,0,...]
     cs = λ .* (cu .- cl) .+ e₁ .* λ*max(0, β)
 
     return cs .+ cl
@@ -178,7 +181,7 @@ returns:
 function get_lower_polynomial(lb, ub, degree, s, t)
     if lb >= 0
         # differentiable way to get unit vector
-        e₂ = (1:degree+1 .== 2)
+        e₂ = (1:(degree+1) .== 2)
         return e₂
     elseif ub <= 0
         return zeros(degree + 1)
@@ -187,9 +190,9 @@ function get_lower_polynomial(lb, ub, degree, s, t)
     Aₗ = get_handelman_coefficients(lb, ub, degree)
     Aᵤ = get_handelman_coefficients(lb, ub, degree)
 
-    e₂ = (1:degree + 1 .== 2)
-    cl = -Aₗ*s.^2
-    cu = -Aᵤ*t.^2 .+ e₂
+    e₂ = (1:(degree+1) .== 2)
+    cl = -Aₗ*s .^ 2
+    cu = -Aᵤ*t .^ 2 .+ e₂
 
     l, u = calculate_extrema(cu .- cl, lb, ub)
     # maybe add λ ∈ [0, 1] to the optimization variables
@@ -227,7 +230,7 @@ returns:
 function get_lower_polynomial_min(lb, ub, degree, s, t)
     if lb >= 0
         # differentiable way to get unit vector
-        e₂ = (1:degree+1 .== 2)
+        e₂ = (1:(degree+1) .== 2)
         return e₂
     elseif ub <= 0
         return zeros(degree + 1)
@@ -236,16 +239,16 @@ function get_lower_polynomial_min(lb, ub, degree, s, t)
     Aₗ = get_handelman_coefficients(lb, 0, degree)
     Aᵤ = get_handelman_coefficients(0, ub, degree)
 
-    e₂ = (1:degree + 1 .== 2)
-    cl = -Aₗ*s.^2
-    cu = -Aᵤ*t.^2 .+ e₂
+    e₂ = (1:(degree+1) .== 2)
+    cl = -Aₗ*s .^ 2
+    cu = -Aᵤ*t .^ 2 .+ e₂
 
     l, u = calculate_extrema(cl .- cu, lb, ub)  # swap order of subtraction for -(cu - cl)
 
     λ = NV.relaxed_relu_gradient(l, u)
     β = -l
 
-    e₁ = (1:degree + 1 .== 1)   # basis vector [1,0,0,...]
+    e₁ = (1:(degree+1) .== 1)   # basis vector [1,0,0,...]
     cs = λ .* (cl .- cu) .+ e₁ .* λ*max(0, β)
 
     return cl .- cs
@@ -349,7 +352,8 @@ function initialize_linear_lower(l, u)
         # zero
         # s: nothing to do, all multipliers = 0
         t[4] = 1
-    else u >= -2*l
+    else
+        u >= -2*l
         # identity
         s[2] = 1
         # can just set t to zero

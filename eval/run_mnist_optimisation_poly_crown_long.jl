@@ -10,7 +10,17 @@ properties, times, y_starts, ys, y_hists = verify_vnnlib(solver, MNIST_PATH, log
 =#
 println("precompiling ...")
 solver = PolyCROWN()
-properties, times, y_starts, ys, y_hists = verify_vnnlib(solver, MNIST_PATH, logfile="./eval/mnist_results_PolyCROWN_long.jld2",  max_properties=2, print_freq=1, n_steps=10, save_history=true, timeout=3600, force_gc=true)
+properties, times, y_starts, ys, y_hists = verify_vnnlib(
+    solver,
+    MNIST_PATH,
+    logfile = "./eval/mnist_results_PolyCROWN_long.jld2",
+    max_properties = 2,
+    print_freq = 1,
+    n_steps = 10,
+    save_history = true,
+    timeout = 3600,
+    force_gc = true,
+)
 
 
 
@@ -33,5 +43,15 @@ properties, times, y_starts, ys, y_hists = verify_vnnlib(solver, MNIST_PATH, log
 
 println("PolyCROWN ...")
 solver = PolyCROWN()
-properties, times, y_starts, ys, y_hists = verify_vnnlib(solver, MNIST_PATH, logfile="./eval/mnist_results_PolyCROWN_long_6-10.jld2", max_properties=5, print_freq=5, n_steps=999999999, save_history=true, timeout=3600, start_idx=6, force_gc=true)
-
+properties, times, y_starts, ys, y_hists = verify_vnnlib(
+    solver,
+    MNIST_PATH,
+    logfile = "./eval/mnist_results_PolyCROWN_long_6-10.jld2",
+    max_properties = 5,
+    print_freq = 5,
+    n_steps = 999999999,
+    save_history = true,
+    timeout = 3600,
+    start_idx = 6,
+    force_gc = true,
+)

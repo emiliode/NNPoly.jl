@@ -23,7 +23,16 @@ properties, times, y_starts, ys, y_hists, t_hists = verify_vnnlib(acrown, ACAS_P
 
 println("precompiling ...")
 pcrown = PolyCROWN()
-properties, times, y_starts, ys, y_hists, t_hists = verify_vnnlib(pcrown, ACAS_PATH, logfile="./eval/acas_results_polycrown.jld2", max_properties=2, print_freq=1, n_steps=10, save_history=true, timeout=300)
+properties, times, y_starts, ys, y_hists, t_hists = verify_vnnlib(
+    pcrown,
+    ACAS_PATH,
+    logfile = "./eval/acas_results_polycrown.jld2",
+    max_properties = 2,
+    print_freq = 1,
+    n_steps = 10,
+    save_history = true,
+    timeout = 300,
+)
 
 
 
@@ -52,5 +61,13 @@ properties, times, y_starts, ys, y_hists, t_hists = verify_vnnlib(pcrown, ACAS_P
 
 println("---- PolyCROWN ----")
 pcrown = PolyCROWN()
-properties, times, y_starts, ys, y_hists, t_hists = verify_vnnlib(pcrown, ACAS_PATH, logfile="./eval/acas_results_polycrown_performance_run.jld2", max_properties=Inf, print_freq=50, n_steps=5000, save_history=true, timeout=300)
-
+properties, times, y_starts, ys, y_hists, t_hists = verify_vnnlib(
+    pcrown,
+    ACAS_PATH,
+    logfile = "./eval/acas_results_polycrown_performance_run.jld2",
+    max_properties = Inf,
+    print_freq = 50,
+    n_steps = 5000,
+    save_history = true,
+    timeout = 300,
+)

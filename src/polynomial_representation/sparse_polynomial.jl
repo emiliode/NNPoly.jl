@@ -8,14 +8,25 @@
 #
 # Changes mostly due to making the code differentiable by Zygote.
 
-struct SparsePolynomial{N<:Number,M<:Integer,T<:Integer,GM<:AbstractArray{N},EM<:AbstractArray{M},VI<:AbstractArray{T}}
+struct SparsePolynomial{
+    N<:Number,
+    M<:Integer,
+    T<:Integer,
+    GM<:AbstractArray{N},
+    EM<:AbstractArray{M},
+    VI<:AbstractArray{T},
+}
     G::GM  # generator matrix
     E::EM  # exponent matrix  (default is UInt16)
     ids::VI  # vector holding variable ids
 end
 
 
-function SparsePolynomial(h::Hyperrectangle{N}, exponent_dtype=UInt16, id_dtype=UInt16) where N <: Number
+function SparsePolynomial(
+    h::Hyperrectangle{N},
+    exponent_dtype = UInt16,
+    id_dtype = UInt16,
+) where {N<:Number}
     n = dim(h)
     unfixed_mask = (h.radius .!= 0)
     G = [h.center I(n)[:, unfixed_mask] .* h.radius]
@@ -41,9 +52,9 @@ kwargs:
     ids - (vector) ids of variables of monomial
 
 """
-function make_monomial(exponents; ids=nothing)
+function make_monomial(exponents; ids = nothing)
     ids = isnothing(ids) ? [1] : ids
-    G = vecOfVec2Mat([[1.]])
+    G = vecOfVec2Mat([[1.0]])
     E = vecOfVec2Mat([exponents])
     return SparsePolynomial(G, E, ids)
 end
@@ -51,7 +62,7 @@ end
 
 function getMonomialBasis(sp::SparsePolynomial)
     @polyvar x[sp.ids]
-    return prod(x.^(sp.E), dims=1)
+    return prod(x .^ (sp.E), dims = 1)
 end
 
 
@@ -68,7 +79,7 @@ function get_monomial_coefficients(sp::SparsePolynomial)
     p = sortperm(collect(eachcol(sp.E)))
     Ĝ = sp.G[:, p]
     G[:, vec(sp.E[:, p]) .+ 1] .= Ĝ
-    return G[1,:]
+    return G[1, :]
 end
 
 
@@ -92,7 +103,7 @@ function get_monomial_coefficients(sp::SparsePolynomial, n_order::Integer)
         end
     end
 
-    return G[1,:]
+    return G[1, :]
 end
 
 
@@ -108,7 +119,7 @@ Removes duplicate monomial entries by summing up monomial coefficients for
 """
 function compact(sp::SparsePolynomial)
     unique_idxs, duplicate_idxs = compact_idxs(sp)
-    return compact(sp, unique_idxs, duplicate_idxs, remove_zeros=false)
+    return compact(sp, unique_idxs, duplicate_idxs, remove_zeros = false)
 end
 
 
@@ -158,12 +169,12 @@ args:
 kwargs:
     remove_zeros - whether to remove monomials with all-zero coefficients
 """
-function compact(sp::SparsePolynomial, unique_idxs, duplicate_idxs; remove_zeros=false)
+function compact(sp::SparsePolynomial, unique_idxs, duplicate_idxs; remove_zeros = false)
     Ê = sp.E[:, unique_idxs]
     Ĝ = Flux.NNlib.scatter(+, sp.G, duplicate_idxs)
 
     if remove_zeros
-        non_zeros = vec(sum(abs.(Ĝ), dims=1) .!= 0)
+        non_zeros = vec(sum(abs.(Ĝ), dims = 1) .!= 0)
         Ê = Ê[:, non_zeros]
         Ĝ = Ĝ[:, non_zeros]
 
@@ -215,7 +226,7 @@ function get_center(sp::SparsePolynomial)
     c = zeros(n)
     for (j, ej) in enumerate(eachcol(sp.E))
         if sum(ej) == 0
-            c += sp.G[:,j]
+            c += sp.G[:, j]
         end
     end
 
@@ -238,7 +249,7 @@ end
 Evaluate the polynomial at x.
 """
 function evaluate(sp::SparsePolynomial, x)
-    return sp.G * prod(x.^sp.E, dims=1)'
+    return sp.G * prod(x .^ sp.E, dims = 1)'
 end
 
 
@@ -259,7 +270,7 @@ end
 Multiply each dimension with the same scalar or multiply each dimension with a
 specific scalar for that dimension.
 """
-function multiply(a::Union{N, VN}, sp::SparsePolynomial) where {N <: Number, VN<:Vector{N}}
+function multiply(a::Union{N,VN}, sp::SparsePolynomial) where {N<:Number,VN<:Vector{N}}
     # @assert length(a) == 1 || length(a) == size(sp.G, 1) "|a| = $(length(a)), but size(G) = $(size(sp.G))"
     Ĝ = a .* sp.G
     return SparsePolynomial(Ĝ, sp.E, sp.ids)
@@ -279,7 +290,10 @@ end
 """
 Shifts the starting point of the polynomial by a vector v.
 """
-function translate(sp::SparsePolynomial{N,M,T,GM,EM,VI}, v::AbstractVector) where {N,M,T,GM,EM,VI}
+function translate(
+    sp::SparsePolynomial{N,M,T,GM,EM,VI},
+    v::AbstractVector,
+) where {N,M,T,GM,EM,VI}
     const_idx = @ignore_derivatives findfirst(x -> sum(x) == 0, eachcol(sp.E))
 
     if isnothing(const_idx)
@@ -287,8 +301,8 @@ function translate(sp::SparsePolynomial{N,M,T,GM,EM,VI}, v::AbstractVector) wher
         Ê = [zeros(M, size(sp.E, 1)) sp.E]
     else
         other_idxs = @ignore_derivatives 1:size(sp.G, 2) .!= const_idx
-        Ĝ = [sp.G[:,const_idx] .+ v sp.G[:,other_idxs]]
-        Ê = @ignore_derivatives [sp.E[:,const_idx] sp.E[:,other_idxs]]
+        Ĝ = [sp.G[:, const_idx] .+ v sp.G[:, other_idxs]]
+        Ê = @ignore_derivatives [sp.E[:, const_idx] sp.E[:, other_idxs]]
     end
 
     return SparsePolynomial(Ĝ, Ê, sp.ids)
@@ -318,7 +332,7 @@ function quadratic_map(Qs, sp::SparsePolynomial)
     k = length(Qs)
 
     Ĝ = reduce(hcat, [vec(sp.G'*Qᵢ'*sp.G) for Qᵢ in Qs])'
-    Ê = @ignore_derivatives repeat(sp.E, 1, m) .+ repeat(sp.E, inner=(1,m))
+    Ê = @ignore_derivatives repeat(sp.E, 1, m) .+ repeat(sp.E, inner = (1, m))
 
     return compact(SparsePolynomial(Ĝ, Ê, sp.ids))
 end
@@ -332,10 +346,10 @@ function quadratic_map_1d(qs, sp::SparsePolynomial)
     n, m = size(sp.G)
     k = length(qs)
 
-    Ĝ = qs .* repeat(sp.G, inner=(1, m)) .* repeat(sp.G, 1, m)
+    Ĝ = qs .* repeat(sp.G, inner = (1, m)) .* repeat(sp.G, 1, m)
     # multiplying with 1 vector is just repeating
     # Ê = [E₁ E₂ ... Eₘ], Eⱼ = E + E[:,j] * ones(Integer, m)'
-    Ê = @ignore_derivatives repeat(sp.E, inner=(1, m)) .+ repeat(sp.E, 1, m)
+    Ê = @ignore_derivatives repeat(sp.E, inner = (1, m)) .+ repeat(sp.E, 1, m)
 
     return compact(SparsePolynomial(Ĝ, Ê, sp.ids))
 end
@@ -372,11 +386,13 @@ function convex_hull(sp1::SparsePolynomial, sp2::SparsePolynomial)
     z_12 = zeros(M, 1, m2)
     o_11 = ones(M, 1, m1)
     o_12 = ones(M, 1, m2)
-    E = [sp1.E sp1.E z12   z12;
-         z21   z21   sp2.E sp2.E;
-         z_11  o_11  z_12  o_12]
+    E = [
+        sp1.E sp1.E z12 z12;
+        z21 z21 sp2.E sp2.E;
+        z_11 o_11 z_12 o_12
+    ]
 
-    ids = vec(1:(n1 + n2 + 1))
+    ids = vec(1:(n1+n2+1))
     return SparsePolynomial(G, E, ids)
 end
 
@@ -390,23 +406,24 @@ The new variable δ will take the variable id of ϵᵢ
 """
 function substitute_binomial(sp::SparsePolynomial, eps_i, α, β)
     eps_i = findall(sp.ids .== eps_i)[1]
-    e_max = maximum(sp.E[eps_i,:])
+    e_max = maximum(sp.E[eps_i, :])
 
     G = copy(sp.G)
     E = copy(sp.E)
 
     # replace every occurence of ϵⁿ by (αδ + β)ⁿ
-    for e_cur in 1:e_max
-        idxs = findall(sp.E[eps_i,:] .== e_cur)
+    for e_cur = 1:e_max
+        idxs = findall(sp.E[eps_i, :] .== e_cur)
         for i in idxs
-            Ĝₑ = α^e_cur * [binomial(e_cur, k) * (β/α)^(e_cur - k) for k in 0:e_cur]' .* sp.G[:,i]
-            Êₑ = repeat(sp.E[:,i], 1, e_cur+1)
-            Êₑ[eps_i,:] .= 0:e_cur
+            Ĝₑ =
+                α^e_cur * [binomial(e_cur, k) * (β/α)^(e_cur - k) for k = 0:e_cur]' .* sp.G[:, i]
+            Êₑ = repeat(sp.E[:, i], 1, e_cur+1)
+            Êₑ[eps_i, :] .= 0:e_cur
 
-            G[:,i] .= Ĝₑ[:,1]
-            E[:,i] .= Êₑ[:,1]
-            G = [G Ĝₑ[:,2:end]]
-            E = [E Êₑ[:,2:end]]
+            G[:, i] .= Ĝₑ[:, 1]
+            E[:, i] .= Êₑ[:, 1]
+            G = [G Ĝₑ[:, 2:end]]
+            E = [E Êₑ[:, 2:end]]
         end
     end
 
@@ -443,42 +460,48 @@ needs to be renormalized.
 function split_error_term(sp::SparsePolynomial, eps_i)
     # we need the row-index corresponding to the identifier
     eps_i = findall(sp.ids .== eps_i)[1]  # since ids are unique there can only be one entry for the identifier
-    e_max = maximum(sp.E[eps_i,:])
+    e_max = maximum(sp.E[eps_i, :])
 
     G₁ = copy(sp.G)
     G₂ = copy(sp.G)
     E₁ = copy(sp.E)
     E₂ = copy(sp.E)
 
-    for e_cur in 1:e_max
-        idxs = findall(sp.E[eps_i,:] .== e_cur)
+    for e_cur = 1:e_max
+        idxs = findall(sp.E[eps_i, :] .== e_cur)
 
         # TODO: use normalize_variable here!
         for i in idxs
             # replace ϵⁿ by (1/2 + 1/2 ϵ₁)ⁿ for ϵ ∈ [0, 1] and normalized ϵ₁
-            Ĝₑ = 1/2^e_cur * [binomial(e_cur, k) for k in 0:e_cur]' .* sp.G[:,i]
-            Êₑ = repeat(sp.E[:,i], 1, e_cur+1)  # we get e_cur+1 new terms, one for each exonent 0,...,e_cur
-            Êₑ[eps_i,:] .= 0:e_cur
+            Ĝₑ = 1/2^e_cur * [binomial(e_cur, k) for k = 0:e_cur]' .* sp.G[:, i]
+            Êₑ = repeat(sp.E[:, i], 1, e_cur+1)  # we get e_cur+1 new terms, one for each exonent 0,...,e_cur
+            Êₑ[eps_i, :] .= 0:e_cur
 
             # reuse current entry, s.t. we can append the remainder to the end, without having to delete the old entry
-            G₁[:,i] .= Ĝₑ[:,1]
-            E₁[:,i] .= Êₑ[:,1]
-            G₁ = [G₁ Ĝₑ[:,2:end]]
-            E₁ = [E₁ Êₑ[:,2:end]]
+            G₁[:, i] .= Ĝₑ[:, 1]
+            E₁[:, i] .= Êₑ[:, 1]
+            G₁ = [G₁ Ĝₑ[:, 2:end]]
+            E₁ = [E₁ Êₑ[:, 2:end]]
 
             # replace ϵⁿ by (-1/2 + 1/2 ϵ₂)ⁿ for ϵ ∈ [-1, 0] and normalized ϵ₂
-            Ĝₑ = 1/2^e_cur * [iseven(e_cur - k) ? binomial(e_cur, k) : -binomial(e_cur, k) for k in 0:e_cur]' .* sp.G[:,i]
+            Ĝₑ =
+                1/2^e_cur *
+                [
+                    iseven(e_cur - k) ? binomial(e_cur, k) : -binomial(e_cur, k) for
+                    k = 0:e_cur
+                ]' .* sp.G[:, i]
 
             # reuse current entry, s.t. we can append the remainder to the end, without having to delete the old entry
-            G₂[:,i] .= Ĝₑ[:,1]
-            E₂[:,i] .= Êₑ[:,1]
-            G₂ = [G₂ Ĝₑ[:,2:end]]
-            E₂ = [E₂ Êₑ[:,2:end]]
+            G₂[:, i] .= Ĝₑ[:, 1]
+            E₂[:, i] .= Êₑ[:, 1]
+            G₂ = [G₂ Ĝₑ[:, 2:end]]
+            E₂ = [E₂ Êₑ[:, 2:end]]
         end
     end
 
     # summarize duplicate terms
-    return compact(SparsePolynomial(G₁, E₁, sp.ids)), compact(SparsePolynomial(G₂, E₂, sp.ids))
+    return compact(SparsePolynomial(G₁, E₁, sp.ids)),
+    compact(SparsePolynomial(G₂, E₂, sp.ids))
 end
 
 
@@ -487,7 +510,7 @@ Splits the variable with the highest exponent in the generator with the largest 
 """
 function split_longest_generator(sp::SparsePolynomial)
     # e.g. x²y⁴ has order 2+4=6
-    e_order = sum(sp.E, dims=1)
+    e_order = sum(sp.E, dims = 1)
     # constant terms can't be split
     non_const_mask = (e_order .!= 0)'
 
@@ -500,7 +523,7 @@ function split_longest_generator(sp::SparsePolynomial)
     Ĝ = sp.G[:, non_const_mask]
     Ê = sp.E[:, non_const_mask]
     # choose longest generator in ||.||₂ sense
-    g_idx = argmax(vec(sum(Ĝ.^2, dims=1)))  # need vec as sum returns matrix
+    g_idx = argmax(vec(sum(Ĝ .^ 2, dims = 1)))  # need vec as sum returns matrix
     e_idx = argmax(Ê[:, g_idx]) # split ϵ with largest exponent in longest generator
     ϵᵢ = sp.ids[e_idx]
 
@@ -515,7 +538,7 @@ largest L₂ norm until a certain splitting depth is reached.
 function split_longest_generator_iterative(sp::SparsePolynomial, splitting_depth)
     polys = [sp]
 
-    for d in 1:splitting_depth
+    for d = 1:splitting_depth
         polys2 = []
         for poly in polys
             poly1, poly2 = split_longest_generator(poly)
@@ -540,13 +563,13 @@ Values of the variables are assumed to be within [-1, 1]
 function monomial_lb(e)
     # if exponents for all variables are 0, we have a constant
     if sum(e) == 0
-        lb = 1.
-    # if all exponents are even, result will be ≧ 0
+        lb = 1.0
+        # if all exponents are even, result will be ≧ 0
     elseif all(iseven.(e))
-        lb = 0.
-    # otherwise lower bound will be -1
+        lb = 0.0
+        # otherwise lower bound will be -1
     else
-        lb = -1.
+        lb = -1.0
     end
 
     return lb
@@ -556,10 +579,10 @@ end
 """
 Computes vector of lower bounds for Matrix of exponents.
 """
-function monomial_lbs(E::M) where M<:AbstractMatrix{<:Integer}
-    one_odd = .~reduce(&, iseven.(E), dims=1)
+function monomial_lbs(E::M) where {M<:AbstractMatrix{<:Integer}}
+    one_odd = .~reduce(&, iseven.(E), dims = 1)
     # sum is only zero for a column if all rows are zero
-    consts  = sum(E, dims=1) .== 0
+    consts = sum(E, dims = 1) .== 0
 
     # all_even cols have lb=0 (so we don't need to add anything for them)
     # const columns have lb=1 (so we need to add 1 for them)
@@ -676,7 +699,7 @@ function zono_overapprox(sp::SparsePolynomial)
 
     other_idxs = setdiff(all_idxs, constant_idxs)
     other_idxs = setdiff(other_idxs, even_idxs)
-    c = sum(sp.G[:,constant_idxs], dims=2) .+ 0.5 .* sum(sp.G[:, even_idxs], dims=2)
+    c = sum(sp.G[:, constant_idxs], dims = 2) .+ 0.5 .* sum(sp.G[:, even_idxs], dims = 2)
     G = [0.5 .* sp.G[:, even_idxs] sp.G[:, other_idxs]]
 
     # TODO: change to something more generic than always Float
@@ -701,7 +724,7 @@ function truncation_zono_reduction(sp::SparsePolynomial, n::Integer)
         return sp
     end
 
-    l2s = vec(sum(sp.G .^ 2, dims=1))
+    l2s = vec(sum(sp.G .^ 2, dims = 1))
     idxs = sortperm(l2s)[1:n]  # get n smallest terms
     all_idxs = 1:size(sp.G, 2)
     remaining_idxs = setdiff(all_idxs, idxs)
@@ -720,7 +743,7 @@ function truncation_zono_reduction(sp::SparsePolynomial, n::Integer)
     G = [G Gz]
     E = [E zeros(en, rows); zeros(rows, em) I(rows)]
     max_id = maximum(sp.ids)
-    ids = [sp.ids; max_id+1:max_id+rows]
+    ids = [sp.ids; (max_id+1):(max_id+rows)]
     poly = SparsePolynomial(G, E, ids)
     return translate(poly, z.center)
 end
@@ -785,7 +808,7 @@ function stack_polys(polys::AbstractVector{<:SparsePolynomial})
 
             # ids can occur in both polynomials
             if id in p2.ids
-                E[i, m1+1:end] .= vec(p2.E[p2.ids .== id, :])
+                E[i, (m1+1):end] .= vec(p2.E[p2.ids .== id, :])
             end
         end
 
@@ -805,7 +828,7 @@ end
 Plots a sparse polynomial by plotting zonotope-overapproximations refined by
 iteratively splitting the largest generators up to a certain splitting depth.
 """
-@recipe function plot_polynomial(sp::SparsePolynomial; splitting_depth=10)
+@recipe function plot_polynomial(sp::SparsePolynomial; splitting_depth = 10)
     # TODO: only split polys that are on boundary of mp
     polys = split_longest_generator_iterative(sp, splitting_depth)
     zonos = zono_overapprox.(polys)

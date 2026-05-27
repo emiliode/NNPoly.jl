@@ -1,6 +1,18 @@
 
-using NNPoly, NeuralVerification, LazySets, JLD2, Optimisers, Profile, PProf, OnnxReader, VnnlibParser, CSV, SparseArrays, BenchmarkTools
-import NNPoly: SparsePolynomial, NNPolySym, init_poly_interval, DiffPolyInterval, DiffNNPolySym
+using NNPoly,
+    NeuralVerification,
+    LazySets,
+    JLD2,
+    Optimisers,
+    Profile,
+    PProf,
+    OnnxReader,
+    VnnlibParser,
+    CSV,
+    SparseArrays,
+    BenchmarkTools
+import NNPoly:
+    SparsePolynomial, NNPolySym, init_poly_interval, DiffPolyInterval, DiffNNPolySym
 import NeuralVerification: NetworkNegPosIdx
 const NP = NNPoly
 const NV = NeuralVerification
@@ -8,21 +20,21 @@ const NV = NeuralVerification
 println("loading data ...")
 @load "../NeuralVerification.jl/test/MNIST_1000.jld2" train_x train_y mnist_net
 
-ϵ = 1. /255.
-x = reshape(train_x[:,:,1], 28*28)
+ϵ = 1.0 / 255.0
+x = reshape(train_x[:, :, 1], 28*28)
 lb = x .- ϵ
 ub = x .+ ϵ
 
-input_set = Hyperrectangle(low=lb, high=ub)
+input_set = Hyperrectangle(low = lb, high = ub)
 mnist_npi = NetworkNegPosIdx(mnist_net)
 
 
 println("precompilation ...")
-dsolver = DiffNNPolySym(truncation_terms=10, common_generators=true)
+dsolver = DiffNNPolySym(truncation_terms = 10, common_generators = true)
 
 s = DiffPolyInterval(mnist_npi, input_set)
 α0 = NP.initialize_params(dsolver, mnist_npi, 2, s)
-NP.propagate(dsolver, mnist_npi, s, α0; printing=true)
+NP.propagate(dsolver, mnist_npi, s, α0; printing = true)
 
 
 println("\nstarting experiment ...\n")
@@ -32,9 +44,9 @@ ys = Float64[]
 
 for tr in truncs
     println("### tr = ", tr)
-    dsolver = DiffNNPolySym(truncation_terms=tr, common_generators=true, init=true)
+    dsolver = DiffNNPolySym(truncation_terms = tr, common_generators = true, init = true)
     s = DiffPolyInterval(mnist_npi, input_set)
-    α0 = NP.initialize_params(mnist_npi, 2, method=:zero)
+    α0 = NP.initialize_params(mnist_npi, 2, method = :zero)
     αs = NP.vec2propagation(mnist_npi, 2, α0)
 
     time = @elapsed y = begin

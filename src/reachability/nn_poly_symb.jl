@@ -13,7 +13,8 @@ end
 
 
 function NV.forward_linear(solver::NNPolySym, L::NV.Layer, input::PolyInterval)
-    Low, Up = interval_map(min.(0, L.weights), max.(0, L.weights), input.Low, input.Up, L.bias)
+    Low, Up =
+        interval_map(min.(0, L.weights), max.(0, L.weights), input.Low, input.Up, L.bias)
     return PolyInterval(Low, Up)
 end
 
@@ -33,13 +34,13 @@ function NV.forward_act(solver::NNPolySym, L::NV.Layer{NV.ReLU}, input::PolyInte
         lu = zeros(n)
         ul = zeros(n)
         uu = zeros(n)
-        for i in 1:n
+        for i = 1:n
             dir = zeros(n)
             dir[i] = 1
-            ll[i] = -max_in_dir_bab(-dir, s.Low, max_steps=solver.splitting_depth)
-            lu[i] = max_in_dir_bab(dir, s.Low, max_steps=solver.splitting_depth)
-            ul[i] = -max_in_dir_bab(-dir, s.Up, max_steps=solver.splitting_depth)
-            uu[i] = max_in_dir_bab(dir, s.Up, max_steps=solver.splitting_depth)
+            ll[i] = -max_in_dir_bab(-dir, s.Low, max_steps = solver.splitting_depth)
+            lu[i] = max_in_dir_bab(dir, s.Low, max_steps = solver.splitting_depth)
+            ul[i] = -max_in_dir_bab(-dir, s.Up, max_steps = solver.splitting_depth)
+            uu[i] = max_in_dir_bab(dir, s.Up, max_steps = solver.splitting_depth)
         end
     end
 
@@ -47,36 +48,36 @@ function NV.forward_act(solver::NNPolySym, L::NV.Layer{NV.ReLU}, input::PolyInte
         res = relax_relu_chebyshev.(ll, lu, degrees)
         cs = vecOfVec2Mat(first.(res))
         ϵs = last.(res)
-        L̂ = quadratic_propagation(cs[:,3], cs[:,2], cs[:,1] .- ϵs, s.Low)
+        L̂ = quadratic_propagation(cs[:, 3], cs[:, 2], cs[:, 1] .- ϵs, s.Low)
 
         res = relax_relu_chebyshev.(ul, uu, degrees)
         cs = vecOfVec2Mat(first.(res))
         ϵs = last.(res)
-        Û = quadratic_propagation(cs[:,3], cs[:,2], cs[:,1] .+ ϵs, s.Up)
+        Û = quadratic_propagation(cs[:, 3], cs[:, 2], cs[:, 1] .+ ϵs, s.Up)
     elseif solver.separate_relaxations && solver.relaxations == :CROWNQuad
         cs = relax_relu_crown_quad_lower.(ll, lu)
         cs = vecOfVec2Mat(cs)
-        L̂ = quadratic_propagation(cs[:,3], cs[:,2], cs[:,1], s.Low)
+        L̂ = quadratic_propagation(cs[:, 3], cs[:, 2], cs[:, 1], s.Low)
 
         cs = relax_relu_crown_quad_upper.(ul, uu)
         cs = vecOfVec2Mat(cs)
-        Û = quadratic_propagation(cs[:,3], cs[:,2], cs[:,1], s.Up)
+        Û = quadratic_propagation(cs[:, 3], cs[:, 2], cs[:, 1], s.Up)
     elseif !solver.separate_relaxations && solver.relaxations == :Chebyshev
         res = relax_relu_chebyshev.(ll, uu, degrees)
         cs = vecOfVec2Mat(first.(res))
         ϵs = last.(res)
 
         # cheby(x) - ϵ is the lower relaxation, cheby(x) + ϵ is the upper relaxation
-        L̂ = quadratic_propagation(cs[:,3], cs[:,2], cs[:,1] .- ϵs, s.Low)
-        Û = quadratic_propagation(cs[:,3], cs[:,2], cs[:,1] .+ ϵs, s.Up)
+        L̂ = quadratic_propagation(cs[:, 3], cs[:, 2], cs[:, 1] .- ϵs, s.Low)
+        Û = quadratic_propagation(cs[:, 3], cs[:, 2], cs[:, 1] .+ ϵs, s.Up)
     elseif !solver.separate_relaxations && solver.relaxations == :CROWNQuad
         cs = relax_relu_crown_quad_lower.(ll, uu)
         cs = vecOfVec2Mat(cs)
-        L̂ = quadratic_propagation(cs[:,3], cs[:,2], cs[:,1], s.Low)
+        L̂ = quadratic_propagation(cs[:, 3], cs[:, 2], cs[:, 1], s.Low)
 
         cs = relax_relu_crown_quad_upper.(ll, uu)
         cs = vecOfVec2Mat(cs)
-        Û = quadratic_propagation(cs[:,3], cs[:,2], cs[:,1], s.Up)
+        Û = quadratic_propagation(cs[:, 3], cs[:, 2], cs[:, 1], s.Up)
     end
 
     return PolyInterval(L̂, Û)

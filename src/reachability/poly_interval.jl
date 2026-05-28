@@ -23,7 +23,7 @@ L  - (SparsePolynomial) lower relaxation
 U  - (SparsePolynomial) upper relaxation
 b  - (vector) bias
 """
-function interval_map(W⁻, W⁺, L, U, b)
+function interval_map(W⁻, W⁺, L::SparsePolynomial, U::SparsePolynomial, b)
     Low = exact_addition(linear_map(W⁻, U), linear_map(W⁺, L))
     Up = exact_addition(linear_map(W⁻, L), linear_map(W⁺, U))
     Low = translate(Low, b)

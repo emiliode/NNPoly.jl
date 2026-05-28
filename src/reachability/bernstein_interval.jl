@@ -389,3 +389,18 @@ function quadratic_propagation(a, b, c, multi::MultiBernsteinImp)
     
     return translate(sum, c)
 end
+
+function bounds(multi::MultiBernsteinImp) 
+    lbs = similar(multi.coefficient_matrix, size(multi.t))
+    ubs = similar(multi.coefficient_matrix, size(multi.t))
+
+    start = 1 
+    n = length(multi.orders[1])
+    for p_idx in eachindex(multi.t)
+        dense_repr = dense(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],n,multi.t[p_idx],multi.orders[p_idx])
+        lbs[p_idx] = minimum(dense_repr)
+        ubs[p_idx] = maximum(dense_repr)
+        start += (n*multi.t[p_idx])
+    end
+    return lbs, ubs
+end

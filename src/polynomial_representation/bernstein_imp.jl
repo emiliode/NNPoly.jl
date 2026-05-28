@@ -358,14 +358,17 @@ end
 Compute dense(idx) of a bernstein polynomial 
 """
 function dense(bern_poly::BernsteinPolynomialImp, idx::CartesianIndex)::Number
-    @assert length(idx) == bern_poly.n
+    return dense(bern_poly.coefficient_matrix, bern_poly.t, bern_poly.orders, idx)
+end
+function dense(coefficient_matrix::TN,t::M, orders::Vector{Int64}, idx::CartesianIndex)::Number where {N<:Number, M<:Number,O<:Number,TN<:AbstractArray{O}}
+    n = length(orders)
 
     res = 0
-    for term_idx = 0:(bern_poly.t-1)
+    for term_idx = 0:(t-1)
         prod = 1
-        for dim = 1:bern_poly.n
+        for dim = 1:n
             #print("($(term_idx*bern_poly.n +dim), $(dim))=$(bern_poly.coefficient_matrix[(term_idx*bern_poly.n+dim),idx[dim]])")
-            prod *= bern_poly.coefficient_matrix[(term_idx*bern_poly.n+dim), idx[dim]]
+            prod *= coefficient_matrix[(term_idx*n+dim), idx[dim]]
         end
         res += prod
     end
@@ -373,6 +376,13 @@ function dense(bern_poly::BernsteinPolynomialImp, idx::CartesianIndex)::Number
 
 end
 
+function dense(coefficient_matrix::TN,n::N,t::M, orders::Vector{Int64}) where {N<:Number, M<:Number,O<:Number,TN<:AbstractArray{O}} 
+    dense_tensor = zeros(Tuple(orders .+ 1))
+    for I in CartesianIndices(dense_tensor)
+        dense_tensor[I] = dense(coefficient_matrix,t,orders, I)
+    end
+    return dense_tensor
+end
 function dense(bern_poly::BernsteinPolynomialImp)
     dense_tensor = zeros(Tuple(bern_poly.orders .+ 1))
     for I in CartesianIndices(dense_tensor)

@@ -355,12 +355,51 @@ end
 
 
 """
+Calculate bounds by evalueting the terms at (0,0,...) and (1,1,...)
+"""
+function quadrant_ibf_minmax(coefficient_matrix::TN, t::M, orders::Vector{Int64}) where { M<:Number,O<:Number,TN<:AbstractArray{O}}
+
+
+
+    nvars = length(orders)
+    minval = zero(O)
+    maxval = zero(O)
+
+    for term in 0:(t-1)
+
+        left_prod  = one(O)
+        right_prod = one(O)
+
+	    for var in 1:nvars
+
+		coeffs = @view coefficient_matrix[term*length(orders)  + var, :]
+
+		first_idx = 1  #findfirst(!iszero, coeffs)
+		last_idx  = orders[var] +1  #findlast(!iszero, coeffs)
+
+		if isnothing(first_idx)
+		    left_prod = zero(eltype(coeffs))
+		    right_prod = zero(eltype(coeffs))
+		    break
+		end
+
+		left_prod *= coeffs[first_idx]
+		right_prod *= coeffs[last_idx]
+	    end
+
+        minval += min(left_prod, right_prod)
+        maxval += max(left_prod, right_prod)
+    end
+    return minval, maxval
+end
+
+"""
 Compute dense(idx) of a bernstein polynomial 
 """
 function dense(bern_poly::BernsteinPolynomialImp, idx::CartesianIndex)::Number
     return dense(bern_poly.coefficient_matrix, bern_poly.t, bern_poly.orders, idx)
 end
-function dense(coefficient_matrix::TN,t::M, orders::Vector{Int64}, idx::CartesianIndex)::Number where {N<:Number, M<:Number,O<:Number,TN<:AbstractArray{O}}
+function dense(coefficient_matrix::TN,t::M, orders::Vector{Int64}, idx::CartesianIndex)::Number where { M<:Number,O<:Number,TN<:AbstractArray{O}}
     n = length(orders)
 
     res = 0
@@ -373,10 +412,24 @@ function dense(coefficient_matrix::TN,t::M, orders::Vector{Int64}, idx::Cartesia
         res += prod
     end
     return res
-
 end
 
-function dense(coefficient_matrix::TN,n::N,t::M, orders::Vector{Int64}) where {N<:Number, M<:Number,O<:Number,TN<:AbstractArray{O}} 
+function dense_min_max(coefficient_matrix::TN, t::M, orders::Vector{Int64}) where { M<:Number,O<:Number,TN<:AbstractArray{O}} 
+    min = Inf
+    max = -Inf
+    for I in CartesianIndices(Tuple(orders .+ 1))
+        cur_val = dense(coefficient_matrix,t,orders, I)
+        if cur_val < min 
+            min = cur_val
+        end
+        if cur_val > max 
+            max = cur_val
+        end
+    end
+    return min, max
+end
+
+function dense(coefficient_matrix::TN,t::M, orders::Vector{Int64}) where { M<:Number,O<:Number,TN<:AbstractArray{O}} 
     dense_tensor = zeros(Tuple(orders .+ 1))
     for I in CartesianIndices(dense_tensor)
         dense_tensor[I] = dense(coefficient_matrix,t,orders, I)

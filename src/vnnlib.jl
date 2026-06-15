@@ -98,6 +98,18 @@ onnx2CROWNNetwork(
     degree = degree,
     first_layer_degree = first_layer_degree,
 )
+onnx2CROWNNetwork(
+    solver::PolyCROWNBern,
+    onnx_file;
+    dtype = Float64,
+    degree = 1,
+    first_layer_degree = 2,
+) = onnx2CROWNNetwork(
+    onnx_file,
+    dtype = dtype,
+    degree = degree,
+    first_layer_degree = first_layer_degree,
+)
 
 function get_sat(lbs, ubs)
     # TODO: do we need to consider other properties?

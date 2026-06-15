@@ -1,5 +1,5 @@
 
-using NNPoly, NeuralVerification, LazySets, JLD2, OnnxReader, VnnlibParser
+using NNPoly, NeuralVerification, LazySets, JLD2, OnnxReader, VnnlibParser, Flux
 const NP = NNPoly
 const NV = NeuralVerification
 
@@ -51,6 +51,7 @@ end
 
 function spiral_verification(netpath, propertypath; n_min = 1, n_max = 50)
     net = read_onnx_network(netpath, dtype = Float64)
+    net_crown = NP.onnx2CROWNNetwork(netpath)
     net_npi = NV.NetworkNegPosIdx(net)
 
     n_in = size(net.layers[1].weights, 2)
@@ -68,8 +69,8 @@ function spiral_verification(netpath, propertypath; n_min = 1, n_max = 50)
     for i = n_min:n_max
         println("### $i spiral size ###")
         spiral_input = make_spiral_input_set(reshape(input_set.center, 28, 28), i)
-        t_lin = @elapsed α0, lbs0, ubs0 =
-            NP.initialize_params(acrown, net, 1, spiral_input, return_bounds = true)
+        t_lin = @elapsed  lbs0, ubs0 =
+            NP.initialize_params(acrown, net_crown, 1, spiral_input, return_bounds = true)
 
         @show lbs0[end]
         @show ubs0[end]
@@ -78,11 +79,11 @@ function spiral_verification(netpath, propertypath; n_min = 1, n_max = 50)
 
         s = NP.initialize_symbolic_domain(
             pcrown.poly_solver,
-            NV.NetworkNegPosIdx(net_npi.layers[1:pcrown.poly_layers]),
+            Chain(net_crown.layers[1:pcrown.poly_layers]),
             spiral_input,
         )
-        t_poly = @elapsed αp, lbsp, ubsp =
-            NP.initialize_params(pcrown, net_npi, 2, s; return_bounds = true)
+        t_poly = @elapsed s, lbsp, ubsp, rs, cs,sym_fact, unique_idxs, duplicate_idxs =
+            NP.initialize_params_bounds(pcrown, net_crown, 2, s)
 
         @show lbsp[end]
         @show ubsp[end]
@@ -100,10 +101,10 @@ end
 
 
 props = [
-    prop for prop in readdir("../../vnncomp22/mnist_fc/vnnlib", join = true) if
+    prop for prop in readdir("/home/emil/Uni/BA/vnncomp2022_benchmarks/benchmarks/mnist_fc/vnnlib", join = true) if
     contains(prop, "0.05")
 ]
-nets = readdir("../../vnncomp22/mnist_fc/onnx", join = true)
+nets = readdir("/home/emil/Uni/BA/vnncomp2022_benchmarks/benchmarks/mnist_fc/onnx", join = true)
 
 loss_lins_all = Dict()
 loss_polys_all = Dict()

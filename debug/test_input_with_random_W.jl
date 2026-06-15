@@ -1,5 +1,6 @@
-using NNPoly, DynamicPolynomials, LazySets, Test
+using NNPoly, DynamicPolynomials, LazySets, Test, NeuralVerification
 NP = NNPoly
+NV = NeuralVerification
 include("helper.jl")
 
 for _ = 1:100

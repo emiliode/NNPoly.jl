@@ -1,5 +1,17 @@
 using NNPoly, LazySets, DynamicPolynomials, Test
 
+function forward(net::NV.Chain, x)
+    a = x
+    for layer in net.layers
+        a = layer.activation.(layer.weights * a .+ layer.bias)
+    end
+    return a
+end
+function point_in(input_set::AbstractHyperrectangle)
+    lb = low(input_set)
+    ub = high(input_set)
+    return lb .+ Base.rand(length(lb)) .* (ub .- lb)
+end
 function dense_to_monomon(bern_dense, bern_implicit::NP.BernsteinPolynomialImp)
     @polyvar x y
     res = 0

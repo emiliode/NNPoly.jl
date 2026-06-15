@@ -23,6 +23,7 @@
         packages = with pkgs; [
 	  julia_111-bin
 	  python
+	  perf
         ];
 	shellHook = ''
 	    export PYTHON=${python}/bin/python

@@ -6,8 +6,10 @@
     # set to true in beginning to get first α
     init = false
     init_method = :CROWNQuad
-    save_bounds = true
+    save_bounds = false
     common_generators = false
+    use_shortcut = true
+    use_memory_optimizations = false
 end
 
 
@@ -39,13 +41,23 @@ function forward_linear(solver::BernSym, L::CROWNLayer, input::BernsteinInterval
         #    L.bias,
         #)
     else
-        input = interval_map(
+         return interval_map(
             min.(0, L.weights),
             max.(0, L.weights),
             input,
-            L.bias,
+            L.bias;
+            use_memory_optimizations=solver.use_memory_optimizations
         )
     end
+end
+
+
+function forward_act(
+    solver::BernSym,
+    L::NV.LayerNegPosIdx{NV.Id},
+    input::BernsteinInterval,
+    α,
+)
     return input
 end
 
@@ -57,7 +69,6 @@ function forward_act(
 )
     sym = input
 
-    #if solver.common_generators
     #    error("unimplemented")
     #    s = truncate_desired_common(sym, solver.truncation_terms)
     #else
@@ -126,7 +137,43 @@ function forward_act(
         #Û = fast_quad_prop(cᵤ[:, 3], cᵤ[:, 2], cᵤ[:, 1], s.Up, ul, uu)
         L̂ = quadratic_propagation(cₗ[:, 3], cₗ[:, 2], cₗ[:, 1], s.Low )
         Û = quadratic_propagation(cᵤ[:, 3], cᵤ[:, 2], cᵤ[:, 1], s.Up )
+        println("lower: $(cₗ[:,3])x^2 +  $(cₗ[:,2])x + $(cₗ[:,1])")
+        println("upper: $(cᵤ[:,3])x^2 +  $(cᵤ[:,2])x + $(cᵤ[:,1])")
     end
 
     return BernsteinInterval(L̂, Û, input.n,input.X)
+end
+
+function forward_network(solver::BernSym, net::Chain, input::BernsteinInterval)
+    degree = 2
+    α0 = initialize_params(net, degree, method = :zero)
+    @show α0
+    # convert flat params to per-layer (2,degree,n) arrays
+    αs = vec2propagation(net, degree, α0)
+    @show αs
+
+    out = input
+    for (L, α) in zip(net.layers, αs)
+        @show L
+        out = forward_linear(solver, L, out)
+        println("after linear:")
+        @show out.Low
+        @show out.Up
+        out = forward_act(solver, L, out, α)
+        println("after ReLU:")
+        @show out.Low
+        @show out.Up
+    end
+    return out
+end
+
+"""
+Initialize the symbolic domain corresponding to the given solver with the respective input set.
+"""
+function initialize_symbolic_domain(
+    solver::BernSym,
+    net,
+    input::AbstractHyperrectangle,
+)
+    return init_bernstein_interval(input) 
 end

@@ -1,33 +1,36 @@
 
-using NNPoly
-import NNPoly: DiffNNPolySym, AlphaNeurify, aCROWN, PolyCROWN, verify_vnnlib
+using NNPoly, Profile
+import NNPoly: DiffNNPolySym, AlphaNeurify, aCROWN, PolyCROWN,PolyCROWNBern, verify_vnnlib
 
 MNIST_PATH = "./eval/mnist_fc"
 
-println("precompiling ...")
-solver = aCROWN()
-properties, times, y_starts, ys, y_hists = verify_vnnlib(
-    solver,
-    MNIST_PATH,
-    logfile = "./eval/mnist256x6_results_aCROWN.jld2",
-    max_properties = 2,
-    print_freq = 1,
-    n_steps = 10,
-    save_history = true,
-    timeout = 300,
-    only_pattern = "256x6",
-    force_gc = true,
-)
+#solver = aCROWN()
+#solver = PolyCROWN()
+#properties, times, y_starts, ys, y_hists = verify_vnnlib(
+#    solver,
+#    MNIST_PATH,
+#    logfile = "./eval/mnist256x6_results_PolyCROWN.jld2",
+#    max_properties = 2,
+#    print_freq = 1,
+#    n_steps = 10,
+#    save_history = true,
+#    timeout = 300,
+#    only_pattern = "256x6",
+#    force_gc = true,
+#)
+#exit()
 
 println("precompiling ...")
-solver = PolyCROWN()
+#solver = PolyCROWN()
+solver = PolyCROWNBern()
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     MNIST_PATH,
-    logfile = "./eval/mnist256x6_results_PolyCROWN.jld2",
-    max_properties = 2,
+    logfile = "./eval/mnist256x6_results_PolyCROWNBern.jld2",
+#    logfile = "./eval/mnist256x6_results_PolyCROW.jld2",
+    max_properties = 1,
     print_freq = 1,
-    n_steps = 10,
+    n_steps = 1,
     save_history = true,
     timeout = 300,
     only_pattern = "256x6",
@@ -37,29 +40,30 @@ properties, times, y_starts, ys, y_hists = verify_vnnlib(
 
 
 
-println("running experiments ...")
+#println("running experiments ...")
+#
+#println("aCROWN ...")
+#solver = aCROWN()
+#properties, times, y_starts, ys, y_hists = verify_vnnlib(
+#    solver,
+#    MNIST_PATH,
+#    logfile = "./eval/mnist256x6_results_aCROWN.jld2",
+#    max_properties = Inf,
+#    print_freq = 5,
+#    n_steps = 1000,
+#    save_history = true,
+#    timeout = 300,
+#    only_pattern = "256x6",
+#    force_gc = true,
+#)
 
-println("aCROWN ...")
-solver = aCROWN()
+println("PolyCROWNBern ...")
+#solver = PolyCROWN()
+solver = PolyCROWNBern()
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     MNIST_PATH,
-    logfile = "./eval/mnist256x6_results_aCROWN.jld2",
-    max_properties = Inf,
-    print_freq = 5,
-    n_steps = 1000,
-    save_history = true,
-    timeout = 300,
-    only_pattern = "256x6",
-    force_gc = true,
-)
-
-println("PolyCROWN ...")
-solver = PolyCROWN()
-properties, times, y_starts, ys, y_hists = verify_vnnlib(
-    solver,
-    MNIST_PATH,
-    logfile = "./eval/mnist256x6_results_PolyCROWN.jld2",
+    logfile = "./eval/mnist256x6_results_PolyCROWNBern.jld2",
     max_properties = Inf,
     print_freq = 5,
     n_steps = 1000,

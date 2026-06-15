@@ -87,7 +87,6 @@ function backward_act(
     else
         crossing = @ignore_derivatives (lbs .< 0) .& (ubs .> 0)
         fixed_active = @ignore_derivatives lbs .>= 0
-
         # need to clamp α value, since we can't use projection for whole optimisation values, when we
         # polynomially relax the first layer
         # aₗ = crossing .* clamp.(α, 0, 1) .+ fixed_active

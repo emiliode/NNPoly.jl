@@ -9,7 +9,7 @@
     save_bounds = false
     common_generators = false
     use_shortcut = true
-    use_memory_optimizations = false
+    use_memory_optimizations = true
 end
 
 

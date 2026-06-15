@@ -548,8 +548,8 @@ function combine_terms(coefficient_matrix::TN, n::Int)where {N<:Number,TN<:Abstr
         for rep_start in get(groups, h, Int[])
 
             rep_tail = @view coefficient_matrix[rep_start+1:rep_start+n-1, :]
-
-            if tail == rep_tail
+            scalar_row =  coefficient_matrix[rep_start,: ] ./ coefficient_matrix[row_start,:]
+            if tail == rep_tail &&  all(y->y==scalar_row[1],  scalar_row)
                 @views coefficient_matrix[rep_start, :] .+= coefficient_matrix[row_start, :]
                 found = true
                 break

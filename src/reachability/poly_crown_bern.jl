@@ -257,6 +257,8 @@ function initialize_params_bounds(
         init_method = psolver.init_method,
         save_bounds = psolver.save_bounds,
         common_generators = psolver.common_generators,
+        use_shortcut = true,
+        use_memory_optimizations = true,
     )
     ŝ = forward_linear(ipsolver, net[1], input)
 

@@ -3,7 +3,7 @@ using JLD2;
 struct MultiBernsteinImp{M<:Integer,O<:Number,TN<:AbstractArray{O}}
     coefficient_matrix::TN # matrix containing coefficients 
     t::Vector{M} # number of terms
-    orders::Vector{Vector{Int64}} # orders
+    orders::Vector{Int64} # orders
 end
 struct BernsteinInterval{N<:Number,M<:Integer,O<:Number,TN<:AbstractArray{O}, VN<:AbstractArray{N}}
     Low::MultiBernsteinImp{M,O,TN}
@@ -29,13 +29,13 @@ function build_multi(bern_polys::Vector{<:BernsteinPolynomialImp})
 	maximum(map(x -> maximum(x.orders), bern_polys))+1,
     )
     res_offset = 1
-    orders = similar(Vector{Vector{Int64}}, length(bern_polys))
+    orders = copy(bern_polys[1].orders)
     t = similar(Vector{typeof(bern_polys[1].t)}, length(bern_polys))
     for (i, poly) in enumerate(bern_polys)
         res[res_offset:(res_offset+size(poly.coefficient_matrix, 1)-1), 1: size(poly.coefficient_matrix,2) ] =
             poly.coefficient_matrix
         res_offset += size(poly.coefficient_matrix, 1)
-        orders[i] = poly.orders
+	@assert poly.orders == orders
         t[i] = poly.t
     end
     return MultiBernsteinImp(res, t, orders)
@@ -73,8 +73,8 @@ function init_bernstein_interval(h::Hyperrectangle)
 	    end
     end
     return BernsteinInterval(
-        MultiBernsteinImp(coeff_matrices, fill(1, num_polys), fill(fill(1, n), num_polys)),
-        MultiBernsteinImp(copy(coeff_matrices), fill(1, num_polys), fill(fill(1, n), num_polys)),
+        MultiBernsteinImp(coeff_matrices, fill(1, num_polys), fill(1, n)),
+        MultiBernsteinImp(copy(coeff_matrices), fill(1, num_polys), fill(1, n)),
         num_polys,
         h,
     )
@@ -85,7 +85,7 @@ checks for terms that are all zeros and gets rid of them
 """
 function remove_zero_terms(multi::MultiBernsteinImp)
     remaining_terms = deepcopy(multi.t)
-    n = length(multi.orders[1])
+    n = length(multi.orders)
     new_coeffs = []
     offset =1 
     for poly_idx in eachindex(remaining_terms)
@@ -162,9 +162,9 @@ function linear_map(
     end
     newt = fill(sum(multi.t), size(A, 1))
     if use_memory_optimizations
-        return combine_terms(MultiBernsteinImp(final_coeffs, newt, fill(multi.orders[1], size(A, 1))))
+	return combine_terms(MultiBernsteinImp(final_coeffs, newt, copy(multi.orders)))
     end
-    return MultiBernsteinImp(final_coeffs, newt, fill(multi.orders[1], size(A, 1)))
+    return MultiBernsteinImp(final_coeffs, newt, copy(multi.orders))
 end
 
 """
@@ -172,27 +172,22 @@ elevate orders of all contained polynomials to degrees ,
 """
 function elevate_all_to(multi::MultiBernsteinImp, new_orders::Vector{Int64};use_memory_optimizations=true)
     @assert all(sub -> all(sub .<= new_orders), multi.orders)
-    diffs = [new_orders - cur_orders for cur_orders in multi.orders]
+    diffs = new_orders .- multi.orders
     res = similar(multi.coefficient_matrix)
     start = 1
-    for i = 1:length(multi.orders)
-        end_idx = start+(multi.t[i]*length(multi.orders[1])) - 1
+    n = length(multi.orders)
+    bin_tensor= binomial_tensor(multi.orders) 
+    for i in eachindex(multi.t)
+        end_idx = start+(multi.t[i]*n) - 1
         #@show start, end_idx
         #@show repeat(binomial_tensor(new_orders),multi.t[i],1)
         res[start:end_idx, :] =
             multi.coefficient_matrix[start:end_idx, :] .*
-            repeat(binomial_tensor(multi.orders[i]), multi.t[i], 1)
-        start += multi.t[i]*length(multi.orders[1])
+            repeat(bin_tensor, multi.t[i], 1)
+        start += multi.t[i]*n 
     end
-    max_diff = maximum(maximum.(diffs))
-    C_diff = zeros(size(multi.coefficient_matrix, 1), max_diff+1)
-    start = 1
-    for i in eachindex(diffs)
-        repeated = repeat(binomial_tensor(diffs[i]), multi.t[i], 1)
-        C_diff[start:(start+(multi.t[i]*length(multi.orders[1]))-1), 1:size(repeated, 2)] =
-            repeated
-        start += multi.t[i]*length(multi.orders[1])
-    end
+
+    C_diff = repeat(binomial_tensor(diffs), sum(multi.t),1) 
 
     C_new_orders = repeat(binomial_tensor(new_orders), sum(multi.t), 1)
 
@@ -200,9 +195,9 @@ function elevate_all_to(multi::MultiBernsteinImp, new_orders::Vector{Int64};use_
     result = result[:, 1:(maximum(new_orders)+1)]
     result = ifelse.(C_new_orders .!= 0, result ./ C_new_orders, 0.0)
     if use_memory_optimizations
-        return combine_terms(MultiBernsteinImp(result, multi.t, fill(new_orders, length(multi.orders))))
+	return combine_terms(MultiBernsteinImp(result, multi.t, copy(new_orders)))
     end
-    return MultiBernsteinImp(result, multi.t, fill(new_orders, length(multi.orders)))
+    return MultiBernsteinImp(result, multi.t, copy(new_orders))
 end
 
 
@@ -260,15 +255,12 @@ function add(
     use_memory_optimizations=true
 ) where {M<:Integer,O<:Number,TN<:AbstractArray{O}}
     @assert length(multi_a.t) == length(multi_b.t)
-    new_orders = [
-        max.(order_a, order_b) for (order_a, order_b) in zip(multi_a.orders, multi_b.orders)
-    ]
     #@show new_orders
-    new_order = maximum(new_orders)
+    new_order = max.(multi_a.orders,multi_b.orders)
     #@show new_order
     n = length(new_order)
-    elevated_a = elevate(multi_a, new_orders)
-    elevated_b = elevate(multi_b, new_orders)
+    elevated_a = elevate_all_to(multi_a, new_order)
+    elevated_b = elevate_all_to(multi_b, new_order)
     rows_a, cols_a = size(elevated_a.coefficient_matrix)
     rows_b, _ = size(elevated_b.coefficient_matrix)
     res = similar(elevated_a.coefficient_matrix, rows_a+rows_b, cols_a)
@@ -292,9 +284,9 @@ function add(
         new_t[i] = elevated_a.t[i] + elevated_b.t[i]
     end
     if use_memory_optimizations
-        return combine_terms(MultiBernsteinImp(res,new_t,new_orders))
+        return combine_terms(MultiBernsteinImp(res,new_t,new_order))
     end
-    return MultiBernsteinImp(res, new_t, new_orders)
+    return MultiBernsteinImp(res, new_t, new_order)
 
 end
 
@@ -313,14 +305,15 @@ function translate(multi::MultiBernsteinImp, bs::Vector{N}) where {N<:Number}
         return multi
     end
     @assert length(bs) == length(multi.t)
+    n = length(multi.orders)
     res = similar(
         multi.coefficient_matrix,
-        size(multi.coefficient_matrix, 1)+length(bs)*length(multi.orders[1]),
+        size(multi.coefficient_matrix, 1)+length(bs)*n,
         size(multi.coefficient_matrix, 2),
     )
     res_offset = 1
     multi_offset = 1
-    n = length(multi.orders[1])
+    n = length(multi.orders)
     for i in eachindex(multi.t)
         add_multi_offset = (multi.t[i]*n) - 1
         res[res_offset:(res_offset+add_multi_offset), :] =
@@ -328,7 +321,7 @@ function translate(multi::MultiBernsteinImp, bs::Vector{N}) where {N<:Number}
         res_offset += add_multi_offset + 1
         multi_offset += add_multi_offset + 1
         b_coeff_mat = fill(0.0, n, size(res, 2))
-        for (i, order) in enumerate(multi.orders[i])
+        for (i, order) in enumerate(multi.orders)
             b_coeff_mat[i, 1:(order+1)] .= 1
         end
         b_coeff_mat[1, :] .*= bs[i]
@@ -393,7 +386,7 @@ function scalar_mul(
 
     j = 1
     t = 0
-    for i = 1:length(multi.orders[1]):rows
+    for i = 1:length(multi.orders):rows
         C[i, :] .*= scalars[j]
         t+=1
         if (t == multi.t[j])
@@ -410,19 +403,19 @@ element wise multiplication of the polynomials in a and b
 function multiply(multi_a::MultiBernsteinImp, multi_b::MultiBernsteinImp;use_memory_optimizations=true)
     @assert length(multi_a.t) == length(multi_b.t)
     new_ts = multi_a.t .* multi_b.t
-    n = length(multi_a.orders[1])
+    n = length(multi_a.orders)
     max_res_order = maximum(maximum.(multi_a.orders .+ multi_b.orders))
     res = Matrix{eltype(multi_a.coefficient_matrix)}[]
     poly_a_offset = 0
     poly_b_offset = 0
+    C_a = binomial_tensor(multi_a.orders)
+    C_b = binomial_tensor(multi_b.orders)
+    max_order_poly_a = maximum(multi_a.orders)
+    max_order_poly_b = maximum(multi_b.orders)
+    C_rescale = binomial_tensor(multi_a.orders .+ multi_b.orders)
     for poly_idx in eachindex(multi_a.t)
-        C_a = binomial_tensor(multi_a.orders[poly_idx])
-        C_b = binomial_tensor(multi_b.orders[poly_idx])
-        max_order_poly_a = maximum(multi_a.orders[poly_idx])
-        max_order_poly_b = maximum(multi_b.orders[poly_idx])
-        C_rescale = binomial_tensor(multi_a.orders[poly_idx] .+ multi_b.orders[poly_idx])
-	    res_poly = similar(multi_a.coefficient_matrix, new_ts[poly_idx]*n, max_res_order + 1)
-	    offset = 1
+	res_poly = similar(multi_a.coefficient_matrix, new_ts[poly_idx]*n, max_res_order + 1)
+	offset = 1
         for term_a_idx = 0:(multi_a.t[poly_idx]-1)
             term_a = multi_a.coefficient_matrix[
                 (poly_a_offset+1+(term_a_idx*n)):(poly_a_offset+(term_a_idx+1)*n),
@@ -464,17 +457,17 @@ function multiply(multi_a::MultiBernsteinImp, multi_b::MultiBernsteinImp;use_mem
 end
 function square(multi::MultiBernsteinImp; use_memory_optimizations=true)
     new_ts = multi.t .* multi.t
-    n = length(multi.orders[1])
+    n = length(multi.orders)
     max_res_order = maximum(maximum.(multi.orders .+ multi.orders))
     res = Matrix{eltype(multi.coefficient_matrix)}[]
     poly_a_offset = 0
     poly_b_offset = 0
+    C = binomial_tensor(multi.orders)
+    max_order_poly = maximum(multi.orders)
+    C_rescale = binomial_tensor(multi.orders .+ multi.orders)
     for poly_idx in eachindex(multi.t)
-        C = binomial_tensor(multi.orders[poly_idx])
-        max_order_poly = maximum(multi.orders[poly_idx])
-        C_rescale = binomial_tensor(multi.orders[poly_idx] .+ multi.orders[poly_idx])
-	    res_poly = similar(multi.coefficient_matrix, new_ts[poly_idx]*n, max_res_order + 1)
-	    offset = 1
+	res_poly = similar(multi.coefficient_matrix, new_ts[poly_idx]*n, max_res_order + 1)
+	offset = 1
         for term_a_idx = 0:(multi.t[poly_idx]-1)
             term_a = multi.coefficient_matrix[
                 (poly_a_offset+1+(term_a_idx*n)):(poly_a_offset+(term_a_idx+1)*n),
@@ -489,11 +482,11 @@ function square(multi::MultiBernsteinImp; use_memory_optimizations=true)
                 scaled_b = term_b .* C
                 conv = row_convolution_kernel(scaled_a, scaled_b)[
                     :,
-                    1:(maximum(multi.orders[poly_idx] .+ multi.orders[poly_idx])+1),
+                    1:(maximum(multi.orders .+ multi.orders)+1),
                 ]
 		res_poly[offset: offset + size(conv,1)-1 , 1:size(conv,2) ] .= ifelse.(C_rescale .!= 0, conv ./ C_rescale, 0.0)
                 if size(conv,2) != size(C_rescale,2)
-		            res_poly[offset: offset + size(conv,1)-1, size(conv,2): end] .= 0.0
+		    res_poly[offset: offset + size(conv,1)-1, size(conv,2): end] .= 0.0
                 end
 		offset+=size(conv,1)
             end
@@ -540,25 +533,48 @@ function quadratic_propagation(a, b, c, multi::MultiBernsteinImp; use_memory_opt
     
 end
 
+function are_multiples(v1::AbstractVector, v2::AbstractVector; rtol=sqrt(eps()))
+    # 1. They must be the same dimension
+    if length(v1) != length(v2)
+        throw(DimensionMismatch("Vectors must have the same length"))
+    end
+    
+    n1, n2 = norm(v1), norm(v2)
+    
+    # 2. Handle zero vectors safely
+    # A zero vector is technically a scalar multiple (0) of any vector
+    if n1 == 0 || n2 == 0
+        return true 
+    end
+    
+    # 3. Use the dot product check with isapprox for floating-point safety
+    return isapprox(abs(dot(v1, v2)), n1 * n2, rtol=rtol)
+end
+
 function bounds(multi::MultiBernsteinImp; use_shortcut = true) 
     lbs = similar(multi.coefficient_matrix, size(multi.t))
     ubs = similar(multi.coefficient_matrix, size(multi.t))
     
+    #println("starting bounds")
+    #assumes low = 0 , high = 1
+    order_first_var = multi.orders[1]
+    monomon_coefficients = [ calculate_bern_coeff_for_monomial(e,order_first_var,0,1) for e in 0:order_first_var ]
+    #@show monomon_coefficients
 
     start = 1 
-    n = length(multi.orders[1])
-    println("starting bounds")
+    n = length(multi.orders)
     start_time = time()
-    @show nthreads()
-    @threads for p_idx in eachindex(multi.t)
+    #@show nthreads()
+    for p_idx in eachindex(multi.t)
+
 	if use_shortcut
-	    lbs[p_idx], ubs[p_idx] = quadrant_ibf_minmax(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders[p_idx])
+	    lbs[p_idx], ubs[p_idx] = quadrant_ibf_minmax(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders,monomon_coefficients, inv(stack(monomon_coefficients)))
 	else
-	    lbs[p_idx], ubs[p_idx]= dense_min_max_threaded(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders[p_idx])
+	    lbs[p_idx], ubs[p_idx]= dense_min_max_threaded(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders)
 	end
         start += (n*multi.t[p_idx])
     end
-    println("bounds took: $(time()- start_time)s")
+    #println("bounds took: $(time()- start_time)s")
     #@show lbs 
     #@show ubs 
     return lbs, ubs #, lbs_new_method, ubs_new_method, lbs_new_method_1, ubs_new_method_1
@@ -602,8 +618,7 @@ function combine_terms(coefficient_matrix::TN, n::Int)where {N<:Number,TN<:Abstr
         for rep_start in get(groups, h, Int[])
 
             rep_tail = @view coefficient_matrix[rep_start+1:rep_start+n-1, :]
-            scalar_row =  coefficient_matrix[rep_start,: ] ./ coefficient_matrix[row_start,:]
-            if tail == rep_tail &&  all(y->y==scalar_row[1],  scalar_row)
+	    if tail == rep_tail #&&  are_multiples(coefficient_matrix[rep_start,:],coefficient_matrix[row_start,:]) 
                 @views coefficient_matrix[rep_start, :] .+= coefficient_matrix[row_start, :]
                 found = true
                 break
@@ -629,7 +644,7 @@ function combine_terms(coefficient_matrix::TN, n::Int)where {N<:Number,TN<:Abstr
 
         out_row += n
     end
-    println("removed $(nblocks- (size(result, 1) ÷ n))")
+    #println("removed $(nblocks- (size(result, 1) ÷ n))")
     return result
 end
 
@@ -637,8 +652,8 @@ end
 per polynomial combine terms that consist of the same variables. 
 """
 function combine_terms(multi::MultiBernsteinImp)
-    n = length(multi.orders[1])
-    columns = maximum(maximum.(multi.orders))+1
+    n = length(multi.orders)
+    columns = maximum(multi.orders)+1
     out_chunks = Matrix{eltype(multi.coefficient_matrix)}[]
     
     new_terms = Int[]

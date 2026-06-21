@@ -53,7 +53,7 @@ end
 """
 Calculates concrete bounds for A*s + b for DiffPolyInterval s with common generators.
 """
-function bounds(A::AbstractMatrix, b::AbstractVector, s::DiffPolyInterval)
+function bounds(A::AbstractMatrix, b::AbstractVector, s::DiffPolyInterval; use_shortcut=true)
     L, U = interval_map_common(
         min.(0, A),
         max.(0, A),

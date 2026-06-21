@@ -205,6 +205,8 @@ function elevate_all_to(multi::MultiBernsteinImp, new_orders::Vector{Int64};use_
     return MultiBernsteinImp(result, multi.t, fill(new_orders, length(multi.orders)))
 end
 
+
+
 """
 elevate orders of all contained polynomials to degrees ,
 """
@@ -214,6 +216,8 @@ function elevate(multi::MultiBernsteinImp, new_orders::Vector{Vector{Int64}};use
     diffs = [new_orders[i] - multi.orders[i] for i in eachindex(multi.orders)]
     res = zeros(size(multi.coefficient_matrix))
     start = 1
+
+
     for i = 1:length(multi.orders)
         end_idx = start+(multi.t[i]*length(multi.orders[1])) - 1
         #@show start, end_idx
@@ -476,22 +480,22 @@ function square(multi::MultiBernsteinImp; use_memory_optimizations=true)
                 (poly_a_offset+1+(term_a_idx*n)):(poly_a_offset+(term_a_idx+1)*n),
                 1 : max_order_poly +1
             ]
+            scaled_a = term_a .* C
             for term_b_idx = 0:(multi.t[poly_idx]-1)
                 term_b = multi.coefficient_matrix[
                     (poly_b_offset+1+(term_b_idx*n)):(poly_b_offset+(term_b_idx+1)*n),
                     1: max_order_poly + 1
                 ]
-                scaled_a = term_a .* C
                 scaled_b = term_b .* C
                 conv = row_convolution_kernel(scaled_a, scaled_b)[
                     :,
                     1:(maximum(multi.orders[poly_idx] .+ multi.orders[poly_idx])+1),
                 ]
-		        res_poly[offset: offset + size(conv,1)-1 , 1:size(conv,2) ] .= ifelse.(C_rescale .!= 0, conv ./ C_rescale, 0.0)
+		res_poly[offset: offset + size(conv,1)-1 , 1:size(conv,2) ] .= ifelse.(C_rescale .!= 0, conv ./ C_rescale, 0.0)
                 if size(conv,2) != size(C_rescale,2)
 		            res_poly[offset: offset + size(conv,1)-1, size(conv,2): end] .= 0.0
                 end
-		        offset+=size(conv,1)
+		offset+=size(conv,1)
             end
         end
         combined= res_poly
@@ -543,19 +547,18 @@ function bounds(multi::MultiBernsteinImp; use_shortcut = true)
 
     start = 1 
     n = length(multi.orders[1])
-    for p_idx in eachindex(multi.t)
-	    if use_shortcut 
-	        lbs[p_idx], ubs[p_idx] = quadrant_ibf_minmax(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders[p_idx])
-	    else
-		throw("TRIED TO NOT USE SHORTCUT")
-	        lbs[p_idx], ubs[p_idx]= dense_min_max(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders[p_idx])
-	    end
-
-	
-
-
+    println("starting bounds")
+    start_time = time()
+    @show nthreads()
+    @threads for p_idx in eachindex(multi.t)
+	if use_shortcut
+	    lbs[p_idx], ubs[p_idx] = quadrant_ibf_minmax(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders[p_idx])
+	else
+	    lbs[p_idx], ubs[p_idx]= dense_min_max_threaded(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders[p_idx])
+	end
         start += (n*multi.t[p_idx])
     end
+    println("bounds took: $(time()- start_time)s")
     #@show lbs 
     #@show ubs 
     return lbs, ubs #, lbs_new_method, ubs_new_method, lbs_new_method_1, ubs_new_method_1
@@ -577,8 +580,6 @@ function bounds(A::AbstractMatrix, b::AbstractVector, s::BernsteinInterval; use_
 end
 
 function combine_terms(coefficient_matrix::TN, n::Int)where {N<:Number,TN<:AbstractArray{N}}
-   # if n == 1
-   # end
 
     nblocks = size(coefficient_matrix, 1) ÷ n
 

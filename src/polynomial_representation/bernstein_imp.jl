@@ -1,6 +1,6 @@
 
 # multivariate bernstein polynomials 
-using DynamicPolynomials, LazySets, SpecialFunctions, DSP
+using DynamicPolynomials, LazySets, SpecialFunctions, DSP, Base.Threads
 
 struct BernsteinPolynomialImp{N<:Number,M<:Integer,O<:Number,TN<:AbstractArray{O}}
     coefficient_matrix::TN # matrix containing coefficients 
@@ -427,6 +427,34 @@ function dense_min_max(coefficient_matrix::TN, t::M, orders::Vector{Int64}) wher
         end
     end
     return min, max
+end
+function dense_min_max_threaded(
+    coefficient_matrix::TN,
+    t::M,
+    orders::Vector{Int64}
+) where {M<:Number,O<:Number,TN<:AbstractArray{O}}
+
+    CI = CartesianIndices(Tuple(orders .+ 1))
+
+    local_min = fill(Inf, nthreads())
+    local_max = fill(-Inf, nthreads())
+
+    @threads for idx in eachindex(CI)
+
+        tid = threadid()
+
+        cur_val = dense(
+            coefficient_matrix,
+            t,
+            orders,
+            CI[idx]
+        )
+
+        local_min[tid] = min(local_min[tid], cur_val)
+        local_max[tid] = max(local_max[tid], cur_val)
+    end
+
+    return minimum(local_min), maximum(local_max)
 end
 
 function dense(coefficient_matrix::TN,t::M, orders::Vector{Int64}) where { M<:Number,O<:Number,TN<:AbstractArray{O}} 

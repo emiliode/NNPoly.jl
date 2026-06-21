@@ -458,13 +458,65 @@ function multiply(multi_a::MultiBernsteinImp, multi_b::MultiBernsteinImp;use_mem
     end
     return MultiBernsteinImp(res, new_ts, multi_a.orders .+ multi_b.orders)
 end
+function square(multi::MultiBernsteinImp; use_memory_optimizations=true)
+    new_ts = multi.t .* multi.t
+    n = length(multi.orders[1])
+    max_res_order = maximum(maximum.(multi.orders .+ multi.orders))
+    res = Matrix{eltype(multi.coefficient_matrix)}[]
+    poly_a_offset = 0
+    poly_b_offset = 0
+    for poly_idx in eachindex(multi.t)
+        C = binomial_tensor(multi.orders[poly_idx])
+        max_order_poly = maximum(multi.orders[poly_idx])
+        C_rescale = binomial_tensor(multi.orders[poly_idx] .+ multi.orders[poly_idx])
+	    res_poly = similar(multi.coefficient_matrix, new_ts[poly_idx]*n, max_res_order + 1)
+	    offset = 1
+        for term_a_idx = 0:(multi.t[poly_idx]-1)
+            term_a = multi.coefficient_matrix[
+                (poly_a_offset+1+(term_a_idx*n)):(poly_a_offset+(term_a_idx+1)*n),
+                1 : max_order_poly +1
+            ]
+            for term_b_idx = 0:(multi.t[poly_idx]-1)
+                term_b = multi.coefficient_matrix[
+                    (poly_b_offset+1+(term_b_idx*n)):(poly_b_offset+(term_b_idx+1)*n),
+                    1: max_order_poly + 1
+                ]
+                scaled_a = term_a .* C
+                scaled_b = term_b .* C
+                conv = row_convolution_kernel(scaled_a, scaled_b)[
+                    :,
+                    1:(maximum(multi.orders[poly_idx] .+ multi.orders[poly_idx])+1),
+                ]
+		        res_poly[offset: offset + size(conv,1)-1 , 1:size(conv,2) ] .= ifelse.(C_rescale .!= 0, conv ./ C_rescale, 0.0)
+                if size(conv,2) != size(C_rescale,2)
+		            res_poly[offset: offset + size(conv,1)-1, size(conv,2): end] .= 0.0
+                end
+		        offset+=size(conv,1)
+            end
+        end
+        combined= res_poly
+        if use_memory_optimizations 
+            combined = combine_terms(res_poly,n)
+        end
+        cur_rows = size(res, 1)
+        if isempty(res)
+            res= combined 
+        else
+            res = vcat(res,combined) 
+        end
+        new_ts[poly_idx] = (size(res,1)- cur_rows) ÷ n
+        poly_a_offset += n*multi.t[poly_idx]
+        poly_b_offset += n*multi.t[poly_idx]
+    end
+    return MultiBernsteinImp(res, new_ts, multi.orders .+ multi.orders)
+end
 
 """
 Computes a one-dimensional quadratic map for each input dimension.
 I.e. yᵢ =  qᵢxᵢ² for each input dimension i
 """
 function quadratic_map_1d(qs, multi::MultiBernsteinImp; use_memory_optimizations=true)::MultiBernsteinImp
-    quad = multiply(multi,multi;use_memory_optimizations)
+    quad = square(multi;use_memory_optimizations)
     return  MultiBernsteinImp(scalar_mul(quad,qs),quad.t,quad.orders)
 end
 
@@ -495,6 +547,7 @@ function bounds(multi::MultiBernsteinImp; use_shortcut = true)
 	    if use_shortcut 
 	        lbs[p_idx], ubs[p_idx] = quadrant_ibf_minmax(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders[p_idx])
 	    else
+		throw("TRIED TO NOT USE SHORTCUT")
 	        lbs[p_idx], ubs[p_idx]= dense_min_max(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders[p_idx])
 	    end
 
@@ -575,7 +628,7 @@ function combine_terms(coefficient_matrix::TN, n::Int)where {N<:Number,TN<:Abstr
 
         out_row += n
     end
-
+    println("removed $(nblocks- (size(result, 1) ÷ n))")
     return result
 end
 

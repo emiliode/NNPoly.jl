@@ -257,8 +257,8 @@ function initialize_params_bounds(
         init_method = psolver.init_method,
         save_bounds = psolver.save_bounds,
         common_generators = psolver.common_generators,
-        use_shortcut = true,
-        use_memory_optimizations = true,
+        use_shortcut = solver.use_shortcut,
+        use_memory_optimizations = solver.use_memory_optimizations,
     )
     ŝ = forward_linear(ipsolver, net[1], input)
 
@@ -285,7 +285,7 @@ function initialize_params_bounds(
     #    duplicate_idxs,
     )
 
-    lbs_lin, ubs_lin = initialize_params_bounds(solver.lin_solver, net[2:end], 1, s_poly)
+    lbs_lin, ubs_lin = initialize_params_bounds(solver.lin_solver, net[2:end], 1, s_poly; use_bounds_shortcut=solver.use_shortcut)
     return ŝ,
     [[l]; lbs_lin],
     [[u]; ubs_lin]
@@ -497,11 +497,12 @@ function optimise_bounds(
                 m[2:end],
                 s_poly,
                 lbs[2:end],
-                ubs[2:end],
+                ubs[2:end];
+		use_bounds_shortcut=solver.use_shortcut
             )
 
-            ll, lu = bounds(s_crown.Λ, s_crown.λ, s_poly;use_shortcut=solver.poly_solver.use_shortcut)
-            ul, uu = bounds(s_crown.Γ, s_crown.γ, s_poly;use_shortcut=solver.poly_solver.use_shortcut)
+            ll, lu = bounds(s_crown.Λ, s_crown.λ, s_poly;use_shortcut=solver.use_shortcut)
+            ul, uu = bounds(s_crown.Γ, s_crown.γ, s_poly;use_shortcut=solver.use_shortcut)
 
             #loss = sum(uu .- ll)
             #loss = sum(max.(0., uu))  # loss for verifying Ay - b ≤ 0 properties

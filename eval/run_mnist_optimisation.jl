@@ -33,7 +33,7 @@ properties, times, y_starts, ys, y_hists = verify_vnnlib(
     n_steps = 1,
     save_history = true,
     timeout = 300,
-    only_pattern = "256x6",
+    only_pattern = "256x2",
     force_gc = true,
 )
 
@@ -69,6 +69,6 @@ properties, times, y_starts, ys, y_hists = verify_vnnlib(
     n_steps = 1000,
     save_history = true,
     timeout = 300,
-    only_pattern = "256x6",
+    only_pattern = "256x2",
     force_gc = true,
 )

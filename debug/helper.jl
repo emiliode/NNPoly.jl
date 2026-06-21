@@ -126,14 +126,14 @@ end
 function print_multi_bernstein_imp(multi::NP.MultiBernsteinImp, n, X)
     @polyvar x[1:n]
     start = 1
-    for i = 1:(length(multi.orders))
+    for i = 1:(ength(multi.t))
         println(
             "$i:",
             imp_to_monomon(
-                multi.coefficient_matrix[start:(start+multi.t[i]*n-1), 1:maximum(multi.orders[i])+1],
+                multi.coefficient_matrix[start:(start+multi.t[i]*n-1), 1:maximum(multi.orders)+1],
                 n,
                 multi.t[i],
-                multi.orders[i],
+                multi.orders,
                 X,
                 x,
             ),
@@ -144,14 +144,14 @@ end
 function multi_to_list(multi::NP.MultiBernsteinImp, n, X, x)
     res = []
     start = 1
-    for i = 1:(length(multi.orders))
+    for i = 1:(length(multi.t))
         push!(
             res,
             imp_to_monomon(
-                multi.coefficient_matrix[start:(start+multi.t[i]*n-1), 1:maximum(multi.orders[i])+1],
+                multi.coefficient_matrix[start:(start+multi.t[i]*n-1), 1:maximum(multi.orders)+1],
                 n,
                 multi.t[i],
-                multi.orders[i],
+                multi.orders,
                 X,
                 x,
             ),

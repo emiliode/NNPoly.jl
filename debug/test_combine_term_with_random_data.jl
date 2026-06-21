@@ -52,10 +52,18 @@ function test()
 
         multi = NP.build_multi(bern_polys)
 
+	lb_before,ub_before  = NP.bounds(multi)
 	
 
-	combined_polys = [ NP.combine_terms(poly.coefficient_matrix, n) for poly in bern_polys] 
 	multi_combined = NP.combine_terms(multi)
+
+	lb_after,ub_after  = NP.bounds(multi_combined)
+	# check bounds 
+	for i in eachindex(lb_before)
+	    @test isapprox(lb_before[i],lb_after[i])
+	    @test isapprox(ub_before[i],ub_after[i])
+	end
+
 	cur_saved_terms = maximum( multi.t .- multi_combined.t) 
 	if cur_saved_terms  > saved_terms 
 	    saved_terms = cur_saved_terms 

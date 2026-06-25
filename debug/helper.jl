@@ -126,7 +126,7 @@ end
 function print_multi_bernstein_imp(multi::NP.MultiBernsteinImp, n, X)
     @polyvar x[1:n]
     start = 1
-    for i = 1:(ength(multi.t))
+    for i = 1:(length(multi.t))
         println(
             "$i:",
             imp_to_monomon(

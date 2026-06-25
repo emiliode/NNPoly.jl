@@ -28,10 +28,11 @@ pcrown = PolyCROWNBern(use_shortcut=false)
 properties, times, y_starts, ys, y_hists, t_hists = verify_vnnlib(
     pcrown,
     ACAS_PATH,
-    logfile = "./eval/acas_results_polycrownbern_slow_bounds_$loss_fun_name.jld2",
+    #logfile = "./eval/acas_results_polycrownbern_slow_bounds_$loss_fun_name.jld2",
+    logfile = "./eval/acas_results_polycrownbern_optimization.jld2",
     max_properties = 2,
     print_freq = 1,
-    n_steps = 1,
+    n_steps = 3,
     save_history = true,
     timeout = 300,
     loss_fun = loss_fun
@@ -87,16 +88,16 @@ properties, times, y_starts, ys, y_hists, t_hists = verify_vnnlib(pcrown, ACAS_P
 #    timeout = 300,
 #    loss_fun = loss_fun
 #)
-println("---- PolyCROWNBern ----")
-pcrown = PolyCROWNBern(use_shortcut=false)
-properties, times, y_starts, ys, y_hists, t_hists = verify_vnnlib(
-    pcrown,
-    ACAS_PATH,
-    logfile = "./eval/acas_results_polycrownbern_slow_bounds_$loss_fun_name.jld2",
-    max_properties = Inf,
-    print_freq = 50,
-    n_steps = 5000,
-    save_history = true,
-    timeout = 300,
-    loss_fun = loss_fun
-)
+#println("---- PolyCROWNBern ----")
+#pcrown = PolyCROWNBern(use_shortcut=false)
+#properties, times, y_starts, ys, y_hists, t_hists = verify_vnnlib(
+#    pcrown,
+#    ACAS_PATH,
+#    logfile = "./eval/acas_results_polycrownbern_slow_bounds_$loss_fun_name.jld2",
+#    max_properties = Inf,
+#    print_freq = 50,
+#    n_steps = 5000,
+#    save_history = true,
+#    timeout = 300,
+#    loss_fun = loss_fun
+#)

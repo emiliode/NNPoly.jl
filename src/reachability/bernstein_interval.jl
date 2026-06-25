@@ -551,14 +551,14 @@ function are_multiples(v1::AbstractVector, v2::AbstractVector; rtol=sqrt(eps()))
     return isapprox(abs(dot(v1, v2)), n1 * n2, rtol=rtol)
 end
 
-function bounds(multi::MultiBernsteinImp; use_shortcut = true) 
+function bounds(multi::MultiBernsteinImp, X::Hyperrectangle; use_shortcut = true) 
     lbs = similar(multi.coefficient_matrix, size(multi.t))
     ubs = similar(multi.coefficient_matrix, size(multi.t))
     
     #println("starting bounds")
     #assumes low = 0 , high = 1
     order_first_var = multi.orders[1]
-    monomon_coefficients = [ calculate_bern_coeff_for_monomial(e,order_first_var,0,1) for e in 0:order_first_var ]
+    monomon_coefficients = [ calculate_bern_coeff_for_monomial(e,order_first_var,low(X)[1],high(X)[1]) for e in 0:order_first_var ]
     #@show monomon_coefficients
 
     start = 1 
@@ -570,7 +570,7 @@ function bounds(multi::MultiBernsteinImp; use_shortcut = true)
 	if use_shortcut
 	    lbs[p_idx], ubs[p_idx] = quadrant_ibf_minmax(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders,monomon_coefficients, inv(stack(monomon_coefficients)))
 	else
-	    lbs[p_idx], ubs[p_idx]= dense_min_max_threaded(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders)
+	    lbs[p_idx], ubs[p_idx]= dense_min_max(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders)
 	end
         start += (n*multi.t[p_idx])
     end
@@ -590,12 +590,19 @@ function bounds(A::AbstractMatrix, b::AbstractVector, s::BernsteinInterval; use_
         s,
         b,
     )
-    ll, lu = bounds(mapped_interval.Low; use_shortcut)
-    ul, uu = bounds(mapped_interval.Up; use_shortcut)
+    ll, lu = bounds(mapped_interval.Low, s.X; use_shortcut)
+    ul, uu = bounds(mapped_interval.Up, s.X; use_shortcut)
     return ll, uu
 end
+function approx_hash(A; atol=eps())
+    h = UInt(0)
+    @inbounds for x in A
+        h = hash(round( x/atol), h)
+    end
+    h
+end
 
-function combine_terms(coefficient_matrix::TN, n::Int)where {N<:Number,TN<:AbstractArray{N}}
+function combine_terms(coefficient_matrix::TN, n::Int;atol=1e-12 )where {N<:Number,TN<:AbstractArray{N}}
 
     nblocks = size(coefficient_matrix, 1) ÷ n
 
@@ -611,14 +618,14 @@ function combine_terms(coefficient_matrix::TN, n::Int)where {N<:Number,TN<:Abstr
 
         tail = @view coefficient_matrix[row_start+1:row_start+n-1, :]
 
-        h = hash(tail)
+        h = approx_hash(tail; atol)
 
         found = false
 
         for rep_start in get(groups, h, Int[])
 
             rep_tail = @view coefficient_matrix[rep_start+1:rep_start+n-1, :]
-	    if tail == rep_tail #&&  are_multiples(coefficient_matrix[rep_start,:],coefficient_matrix[row_start,:]) 
+	    if isapprox(tail ,rep_tail;atol) #&&  are_multiples(coefficient_matrix[rep_start,:],coefficient_matrix[row_start,:]) 
                 @views coefficient_matrix[rep_start, :] .+= coefficient_matrix[row_start, :]
                 found = true
                 break

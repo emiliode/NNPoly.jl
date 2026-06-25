@@ -270,7 +270,7 @@ function initialize_params_bounds(
     #duplicate_idxs = Vector{Int}()
 
     # for first layer, bounds from s.Low and s.Up are the same
-    l, u = bounds(ŝ.Low; ipsolver.use_shortcut)
+    l, u = bounds(ŝ.Low, ŝ.X; ipsolver.use_shortcut)
 
     s_poly = forward_act_stub(
         ipsolver,
@@ -510,8 +510,9 @@ function optimise_bounds(
         end
 
     t_start = time()
-    loss =  optfun(net) #res  =optimise(optfun, net, opt, params = params)
+    loss =  optfun(net) 
     res  = (t_hist= [time() - t_start], y_hist=[loss])
+    #res  =optimise(optfun, net, opt, params = params)
 
     print_results && println("lbs = ", lbs[end])
     print_results && println("ubs = ", ubs[end])

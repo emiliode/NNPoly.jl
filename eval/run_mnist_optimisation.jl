@@ -10,7 +10,7 @@ properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     MNIST_PATH,
     logfile = "./eval/mnist256x6_results_PolyCROWN.jld2",
-    max_properties = 2,
+    max_properties = 1,
     print_freq = 1,
     n_steps = 10,
     save_history = true,

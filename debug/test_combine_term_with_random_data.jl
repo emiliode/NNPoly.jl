@@ -52,12 +52,12 @@ function test()
 
         multi = NP.build_multi(bern_polys)
 
-	lb_before,ub_before  = NP.bounds(multi)
+	lb_before,ub_before  = NP.bounds(multi,X)
 	
 
 	multi_combined = NP.combine_terms(multi)
 
-	lb_after,ub_after  = NP.bounds(multi_combined)
+	lb_after,ub_after  = NP.bounds(multi_combined,X)
 	# check bounds 
 	for i in eachindex(lb_before)
 	    @test isapprox(lb_before[i],lb_after[i])

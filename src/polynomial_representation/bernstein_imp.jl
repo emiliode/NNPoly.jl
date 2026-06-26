@@ -361,6 +361,7 @@ function quadrant_ibf_minmax(coefficient_matrix::TN, t::M, orders::Vector{Int64}
 
     
 
+    @show monomon_coeffs
     nvars = length(orders)
     minval = zero(O)
     maxval = zero(O)
@@ -382,16 +383,18 @@ function quadrant_ibf_minmax(coefficient_matrix::TN, t::M, orders::Vector{Int64}
 	    left_prod *= coeffs[first_idx]
 	    right_prod *= coeffs[last_idx]
 	end
-	first_row = @view coefficient_matrix[term*nvars + 1,:] 
+	first_row = @view coefficient_matrix[term*nvars + 1,1:orders[1]+1] 
 
 	if any([are_multiples(first_row , monomon_coefficient) for monomon_coefficient in monomon_coeffs])
 	    left_prod *= first_row[1]
 	    right_prod *= first_row[orders[1]+1]
+	    @show left_prod, right_prod
 	    minval += min(left_prod, right_prod)
 	    maxval += max(left_prod, right_prod)
+	    @show minval, maxval
 	else 
 	    #@show first_row
-	    #throw("SHOULD NOT HAPPEN")
+	    throw("SHOULD NOT HAPPEN")
 	    original_coeffs = inverse * first_row
 	    if all(original_coeffs .== 0 ) 
 		continue 

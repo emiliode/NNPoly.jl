@@ -1,9 +1,9 @@
 using LazySets
 using JLD2;
 struct MultiBernsteinImp{M<:Integer,O<:Number,TN<:AbstractArray{O}}
-    coefficient_matrix::TN # matrix containing coefficients 
+    coefficient_matrix::TN # matrix containing the bernstein terms with coefficients. 
     t::Vector{M} # number of terms
-    orders::Vector{Int64} # orders
+    orders::Vector{Int64} # orders of the variables
 end
 struct BernsteinInterval{N<:Number,M<:Integer,O<:Number,TN<:AbstractArray{O}, VN<:AbstractArray{N}}
     Low::MultiBernsteinImp{M,O,TN}
@@ -50,6 +50,8 @@ function init_one_coeff_mat(poly_idx,num_poly_vars, input_idx, X::Hyperrectangle
     return coeff_mat
 end
 
+
+
 """
 Construct a BernsteinInterval over h by filling Low and Up with x for the unfixed variables
 """
@@ -72,11 +74,12 @@ function init_bernstein_interval(h::Hyperrectangle)
 	        coeff_matrices[coeff_idx:coeff_idx + n - 1, :] = coeff_mat
 	    end
     end
+    X = Hyperrectangle(h.center[unfixed_mask], h.radius[unfixed_mask])
     return BernsteinInterval(
         MultiBernsteinImp(coeff_matrices, fill(1, num_polys), fill(1, n)),
         MultiBernsteinImp(copy(coeff_matrices), fill(1, num_polys), fill(1, n)),
         num_polys,
-        h,
+        X,
     )
 end
 

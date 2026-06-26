@@ -50,6 +50,27 @@ function forward_linear(solver::BernSym, L::CROWNLayer, input::BernsteinInterval
         )
     end
 end
+function forward_linear(solver::BernSym, L::CROWNLayer, input::CombinedPolyBernsteinInterval)
+    if solver.common_generators
+        error("unimplemented")
+        #Low, Up = interval_map_common(
+        #    min.(0, L.weights),
+        #    max.(0, L.weights),
+        #    input.poly_interval.Low,
+        #    input.poly_interval.Up,
+        #    L.bias,
+        #)
+    else
+         return interval_map(
+            min.(0, L.weights),
+            max.(0, L.weights),
+            input,
+            L.bias;
+            use_memory_optimizations=solver.use_memory_optimizations
+        )
+    end
+end
+
 
 
 function forward_act(
@@ -77,8 +98,8 @@ function forward_act(
     s = sym
 
     # take bounds w/o splitting depth for being differentiable
-    ll, lu = bounds(s.Low)
-    ul, uu = bounds(s.Up)
+    ll, lu = bounds(s.Low,s.X)
+    ul, uu = bounds(s.Up,s.X)
 
     if solver.save_bounds
         throw("unimplemented")
@@ -175,5 +196,5 @@ function initialize_symbolic_domain(
     net,
     input::AbstractHyperrectangle,
 )
-    return init_bernstein_interval(input) 
+    return init_combined_bernstein_interval(input) 
 end

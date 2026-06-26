@@ -55,7 +55,7 @@ end
 function imp_to_monomon(bern_imp::NP.BernsteinPolynomialImp, x)
     bern_eval = []
     bernstein_basis = NP.get_basis_vectors(bern_imp.orders, bern_imp.X)
-    for i = 1:length(x)
+    for i in eachindex(x)
         push!(
             bern_eval,
             [
@@ -140,6 +140,85 @@ function print_multi_bernstein_imp(multi::NP.MultiBernsteinImp, n, X)
         )
         start += multi.t[i] * n
     end
+end
+function print_combined_multi(multi::NP.CombinedMultiBernsteinImp;show_matrices=false)
+    @polyvar x[1:multi.n]
+    println("bern_terms")
+    show_matrices &&@show multi.bern_terms
+    for i in 1:multi.t
+	term_start = (i-1)*multi.n + 1
+	println("$i:", imp_to_monomon(
+			    multi.bern_terms[term_start : i* multi.n, :],
+			    multi.n,
+			    1,
+			    multi.orders,
+			    multi.X,
+			    x))
+    end
+    println("polys")
+    show_matrices && @show multi.coeffs
+    for i in  axes(multi.coeffs,1)
+	println("$i:", imp_to_monomon(
+			    NP.get_poly(i,multi),
+			    multi.n,
+			    multi.t,
+			    multi.orders,
+			    multi.X,
+			    x))
+	
+    end
+end
+function print_combined_interval(bern_interval::NP.CombinedPolyBernsteinInterval;show_matrices=false) 
+    @polyvar x[1:bern_interval.Low.n]
+    println("bern_terms")
+    show_matrices &&@show bern_interval.Low.bern_terms
+    show_matrices &&@show bern_interval.Up.bern_terms
+    for i in 1:bern_interval.Low.t
+	term_start = (i-1)*bern_interval.Low.n + 1
+	println("$i:", imp_to_monomon(
+			    bern_interval.Low.bern_terms[term_start : i* bern_interval.Low.n, :],
+			    bern_interval.Low.n,
+			    1,
+			    bern_interval.Low.orders,
+			    bern_interval.Low.X,
+			    x))
+    end
+    for i in 1:bern_interval.Up.t
+	term_start = (i-1)*bern_interval.Up.n + 1
+	println("$i:", imp_to_monomon(
+			    bern_interval.Up.bern_terms[term_start : i* bern_interval.Up.n, :],
+			    bern_interval.Up.n,
+			    1,
+			    bern_interval.Up.orders,
+			    bern_interval.Up.X,
+			    x))
+    end
+    println("Lower polys")
+    show_matrices && @show bern_interval.Low.coeffs
+    for i in  axes(bern_interval.Low.coeffs,1)
+	println("$i:", imp_to_monomon(
+			    NP.get_poly(i,bern_interval.Low),
+			    bern_interval.Low.n,
+			    bern_interval.Low.t,
+			    bern_interval.Low.orders,
+			    bern_interval.Low.X,
+			    x))
+	
+    end
+    println("Upper polys")
+    show_matrices && @show bern_interval.Up.coeffs
+    for i in axes(eachrow(bern_interval.Up.coeffs),1)
+
+	println("$i:", imp_to_monomon(
+			    NP.get_poly(i,bern_interval.Up),
+			    bern_interval.Up.n,
+			    bern_interval.Up.t,
+			    bern_interval.Up.orders,
+			    bern_interval.Up.X,
+			    x))
+	
+    end
+
 end
 function multi_to_list(multi::NP.MultiBernsteinImp, n, X, x)
     res = []

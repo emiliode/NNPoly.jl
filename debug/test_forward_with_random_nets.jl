@@ -56,7 +56,7 @@ net = random_net(n)
 #
 #net = Chain(L1,L2)
 input_set = Hyperrectangle(low=fill(-1,n), high=fill(1,n) )
-input = NP.init_bernstein_interval(input_set)
+input = NP.init_combined_bernstein_interval(input_set)
 
 solver = NP.BernSym(common_generators = false, init=true)
 
@@ -64,14 +64,14 @@ out = NP.forward_network(solver, net,input)
 #crown_out = NP.forward_network(crown_solver, net, NP.initialize_symbolic_domain(crown_solver,net,input_set))
 
 @polyvar x[1:n]
-upper_polys = multi_to_list(out.Up,n,input_set,x)
-lower_polys = multi_to_list(out.Low,n,input_set,x)
-println(upper_polys)
-println(lower_polys)
+#upper_polys = multi_to_list(out.Up,n,input_set,x)
+#lower_polys = multi_to_list(out.Low,n,input_set,x)
+#println(upper_polys)
+#println(lower_polys)
 #check if bounds are correct by testing them for random points.
 max_error = 0
-_ , upper_bounds = NP.bounds(out.Up)
-lower_bounds , _ = NP.bounds(out.Low)
+_ , upper_bounds = NP.bounds(out.Up,out.Up.X)
+lower_bounds , _ = NP.bounds(out.Low,out.Low.X)
 for _ in 1:100
     p = point_in(input_set)
     p_out = forward(net, p)

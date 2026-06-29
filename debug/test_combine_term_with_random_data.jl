@@ -7,7 +7,7 @@ function test()
     # input dimension
     saved_terms = 0
     for _ = 1:20
-        n = rand(1:10)
+        n = rand(1:3)
 
         @polyvar x[1:n]
         lbs = fill(0.0, n) #round.( rand(n) .* 200 .- 100, digits=4)
@@ -52,9 +52,21 @@ function test()
 
         multi = NP.build_multi(bern_polys)
 
+	UPPER_VALUE_LIM = 100
+	LOWER_VALUE_LIM = -100
+	RANGE =  UPPER_VALUE_LIM - LOWER_VALUE_LIM
+	output_vars = rand(n:6)
+	A = round.( rand(output_vars, n) .* RANGE .- (RANGE/2); digits=3)
+	polys = A * polys
+
+	@show A
+	@show multi
+	multi = NP.linear_map(A,multi;use_memory_optimizations=false)
+
 	lb_before,ub_before  = NP.bounds(multi,X)
 	
 
+	@show multi
 	multi_combined = NP.combine_terms(multi)
 
 	lb_after,ub_after  = NP.bounds(multi_combined,X)

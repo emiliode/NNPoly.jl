@@ -130,20 +130,29 @@ plot_bound_widths(
     "acas slower bern bounds",
     "plots/acas_bern_slow_vs_poly_crown.svg"  )
 
-plot_bound_widths(
-    load("./eval/mnist256x6_results_PolyCROWN.jld2")["ys"],
-    load("./eval/mnist256x6_results_PolyCROWNBern.jld2")["ys"], 
-    "polycrown", "bern", 
-    "mnist bern vs poly",
-    "plots/mnist_bern_vs_poly.svg"  )
-plot_bound_widths(
-    #load("./eval/mnist256x6_results_PolyCROWN.jld2")["ys"],
-    load("eval/mnist256x6_results_PolyCROWNBern_more_combine.jld2")["ys"],
-    load("./eval/mnist256x6_results_PolyCROWNBern.jld2")["ys"], 
-    "bern more combine", "bern", 
-    "mnist bern more combine vs bern",
-    "plots/mnist_more_combine_bern_vs_bern.svg"  )
+#plot_bound_widths(
+#    load("./eval/mnist256x2_15_results_PolyCROWN.jld2")["ys"],
+#    load("./eval/mnist256x2_15_results_PolyCROWNBern.jld2")["ys"], 
+#    "polycrown", "bern", 
+#    "mnist256x2 15 bern vs poly",
+#    "plots/mnist256x2_bern_vs_poly.svg"  )
 
+    pcrown = load("./eval/mnist256x6_results_PolyCROWN.jld2")
+    pcrown_bern = load("./eval/mnist256x6_results_PolyCROWNBern.jld2")
+plot_bound_widths(
+    pcrown["ys"],
+    pcrown_bern["ys"],
+    "polycrown", "bern", 
+    "mnist 256x6 15,20 bern vs poly",
+    "plots/mnist256x6_bern_vs_poly.svg"  )
+#plot_bound_widths(
+#    #load("./eval/mnist256x6_results_PolyCROWN.jld2")["ys"],
+#    load("eval/mnist256x6_results_PolyCROWNBern_more_combine.jld2")["ys"],
+#    load("./eval/mnist256x6_results_PolyCROWNBern.jld2")["ys"], 
+#    "bern more combine", "bern", 
+#    "mnist bern more combine vs bern",
+#    "plots/mnist_more_combine_bern_vs_bern.svg"  )
+#
 
 
 polycrown_res  = load("./eval/mnist256x6_results_PolyCROWN.jld2")["ys"]
@@ -160,3 +169,60 @@ xlabel!("Polycrown widths")
 ylabel!("Bern widths")
 
 savefig("plots/mnist_poly_vs_bern_linear_scale.svg")
+
+
+    pcrown_bern = load("./eval/mnist256x6_results_PolyCROWNBern.jld2")
+    pcrown_bern_combined = load("./eval/mnist256x6_results_PolyCROWNBern_combined.jld2")
+plot_bound_widths(
+    pcrown_bern["ys"],
+    pcrown_bern_combined["ys"],
+    "bern original", "bern combined", 
+    "mnist 256x6 15,20 bern original vs bern combined ",
+    "plots/mnist256x6_bern_vs_bern_combined.svg"  )
+
+pcrown = load("./eval/mnist256x6_results_PolyCROWN.jld2")
+pcrown_bern_combined = load("./eval/mnist256x6_results_PolyCROWNBern_combined.jld2")
+@show pcrown_bern_combined["ys"]
+@show pcrown_bern["ys"]
+plot_bound_widths(
+    pcrown["ys"],
+    pcrown_bern_combined["ys"],
+    "polycrown", "bern combined", 
+    "mnist 256x6 15,20 polycrown vs bern combined ",
+    "plots/mnist256x6_poly_vs_bern_combined.svg"  )
+
+pcrown = load("./eval/acas_results_polycrown_bounds_loss_violation_stop.jld2")
+pcrown_bern_combined = load("./eval/acas_results_polycrownbern_combined_intervals_with_combine_terms.jld2")
+@show pcrown_bern_combined["ys"]
+@show pcrown_bern["ys"]
+plot_bound_widths(
+    pcrown["ys"],
+    pcrown_bern_combined["ys"],
+    "polycrown", "bern combined + combine_terms no shortcut", 
+    "acas polycrown vs bern combined + combine_terms no shortcut",
+    "plots/acas_polycrown_vs_bern_combined_intervals_with_combine_terms.svg"  )
+
+pcrown = load("./eval/acas_results_polycrown_bounds_loss_violation_stop.jld2")
+pcrown_bern_combined = load("./eval/acas_results_polycrownbern_combined_intervals_with_combine_terms_and_shortcut.jld2")
+@show pcrown_bern_combined["ys"]
+@show pcrown_bern["ys"]
+plot_bound_widths(
+    pcrown["ys"],
+    pcrown_bern_combined["ys"],
+    "polycrown", "bern combined + combine_terms + shortcut", 
+    "acas polycrown vs bern combined + combine_terms + shortcut",
+    "plots/acas_polycrown_vs_bern_combined_intervals_with_combine_terms_and_shortcut.svg"  )
+
+pcrown = load("./eval/mnist256x6_results_PolyCROWN_all.jld2")
+pcrown_bern_combined = load("./eval/mnist256x6_results_PolyCROWNBern_combined_all.jld2")
+@show pcrown_bern_combined["ys"]
+@show pcrown_bern["ys"]
+plot_bound_widths(
+    pcrown["ys"],
+    pcrown_bern_combined["ys"],
+    "polycrown", "bern combined", 
+    "mnist256x6 10,15,20,25 polycrown vs bern combined",
+    "plots/mnist256x6_all_polycrown_vs_bern_combined.svg"  )
+
+println("polycron & $(sum(pcrown["times"]) / length(pcrown["times"]) )")
+println("bern combined & $(sum(pcrown_bern_combined["times"]) / length(pcrown_bern_combined["times"]) )")

@@ -167,9 +167,9 @@ end
 function initialize_symbolic_domain(
     solver::PolyCROWNBern,
     net::Chain,
-    input::AbstractHyperrectangle,
+    input::AbstractHyperrectangle;use_combined_repr=true
 )
-    return initialize_symbolic_domain(solver.poly_solver, net[1:solver.poly_layers], input)
+    return initialize_symbolic_domain(solver.poly_solver, net[1:solver.poly_layers], input; use_combined_repr)
 end
 
 
@@ -270,8 +270,13 @@ function initialize_params_bounds(
     #duplicate_idxs = Vector{Int}()
 
     # for first layer, bounds from s.Low and s.Up are the same
-    l, u = bounds(ŝ.Low, ŝ.Low.X; ipsolver.use_shortcut)
-
+    if ŝ isa BernsteinInterval 
+	l, u = bounds(ŝ.Low, ŝ.X; ipsolver.use_shortcut)
+    elseif ŝ isa CombinedPolyBernsteinInterval  
+	l, u = bounds(ŝ.Low, ŝ.Low.X; ipsolver.use_shortcut)
+    else 
+	throw("should be one of these two types")
+    end 
     s_poly = forward_act_stub(
         ipsolver,
         net[1],
@@ -503,10 +508,11 @@ function optimise_bounds(
     params = OptimisationParams(),
     loss_fun = bounds_loss,
     print_results = false,
+    use_combined_repr = true
 )
     psolver = solver.poly_solver
     # TODO: implement method for Chain
-    s = initialize_symbolic_domain(solver, net[1:solver.poly_layers], input_set)
+    s = initialize_symbolic_domain(solver, net[1:solver.poly_layers], input_set;use_combined_repr)
 
     # TODO: is there some better way of returning all those precomputed values?
     # bounds before activation in first layer are just interval bounds and don't change

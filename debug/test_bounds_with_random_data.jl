@@ -51,7 +51,9 @@ function test()
         bern_polys = [NP.make_polynomial(poly, degrees, X) for poly in polys]
 
         multi = NP.build_multi(bern_polys)
-	lbs_old, ubs_old =NP.bounds(multi;use_shortcut=true) #lbs_new, ubs_new, lbs_new_1, ubs_new_1 = NP.bounds(multi)	
+	multi_combined = NP.make_polynomial(polys, degrees, X)
+	lbs_old, ubs_old =NP.bounds(multi,X;use_shortcut=true) #lbs_new, ubs_new, lbs_new_1, ubs_new_1 = NP.bounds(multi)	
+	lbs_comb, ubs_comb = NP.bounds(multi_combined,X;use_shortcut=true)
 	for _ in 1:100
 	    p = point_in(X)
 	    p_out = [ poly(p) for poly in polys  ]
@@ -66,6 +68,9 @@ function test()
 		if error > max_error 
 		    max_error = error
 		end
+		@assert lbs_old[i] == lbs_comb[i]
+		@assert ubs_old[i] == ubs_comb[i]
+
 
 		#@assert lbs_old[i] <= p_out[i] <= ubs_old[i] "Failed with $i "
 		#@assert lbs_new_1[i] <= p_out[i] <= ubs_new_1[i] "Failed with $(lbs_new_1[i]) <= $(p_out[i]) <= $(ubs_new_1[i]) "

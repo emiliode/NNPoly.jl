@@ -9,7 +9,7 @@ solver = PolyCROWN()
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     MNIST_PATH,
-    logfile = "./eval/mnist256x6_results_PolyCROWN.jld2",
+    logfile = "./eval/mnist256x6_results_PolyCROWN_all.jld2",
     max_properties = 1,
     print_freq = 1,
     n_steps = 10,
@@ -23,7 +23,7 @@ solver = PolyCROWNBern(use_shortcut=true)
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     MNIST_PATH,
-    logfile = "./eval/mnist256x6_results_PolyCROWNBern.jld2",
+    logfile = "./eval/mnist256x6_results_PolyCROWNBern_combined_all.jld2",
     #logfile = "./eval/mnist256x6_results_PolyCROW.jld2",
     max_properties = 1,
     print_freq = 1,
@@ -44,7 +44,7 @@ solver = PolyCROWN()
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     MNIST_PATH,
-    logfile = "./eval/mnist256x6_results_PolyCROWN.jld2",
+    logfile = "./eval/mnist256x6_results_PolyCROWN_all.jld2",
     max_properties = Inf,
     print_freq = 5,
     n_steps = 1000,
@@ -59,7 +59,7 @@ solver = PolyCROWNBern(use_shortcut=true)
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     MNIST_PATH,
-    logfile = "./eval/mnist256x6_results_PolyCROWNBern.jld2",
+    logfile = "./eval/mnist256x6_results_PolyCROWNBern_combined_all.jld2",
     #logfile = "./eval/mnist256x6_results_PolyCROWN.jld2",
     max_properties = Inf,
     print_freq = 5,

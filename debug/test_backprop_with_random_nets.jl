@@ -62,7 +62,7 @@ function run_tests(num_tests)
         n = rand(1:3)
         net_pcrown = random_crown_net(n) 
         input_set = Hyperrectangle(low=fill(0,n), high=fill(1,n) )
-        input = NP.init_bernstein_interval(input_set)
+        input = NP.init_combined_bernstein_interval(input_set)
 
         @show net_pcrown
         ŝ, lbs, ubs = NP.initialize_params_bounds(solver,net_pcrown,2,input)

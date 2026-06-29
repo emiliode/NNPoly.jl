@@ -21,6 +21,58 @@ function CombinedPolyBernsteinInterval(Low::CombinedMultiBernsteinImp{N,M,O,TN},
     return CombinedPolyBernsteinInterval(Low, Up,Vector{Vector{N}}(), Vector{Vector{N}}())
 end
 
+"""
+Creates a CombinedMultiBernsteinImp from the given multivariate polynomials.
+"""
+function make_polynomial(
+    polynoms::Vector{<:AbstractPolynomialLike},
+    orders::Vector{Int64},
+    X::Hyperrectangle{T},
+) where {T<:Number}
+    #println("input: $polynom with orders: $orders over $X")
+    basis_vector = get_basis_vectors(orders, X)
+    #println("basisvector $basis_vector")
+    all_bern_coeff = []
+    C =  zeros(Float64, length(polynoms), 0)   # num_polys×0 matrix
+    # get all the terms and the Coefficient matrix
+    all_terms = []
+    for (poly_idx,polynom) in enumerate(polynoms)
+	for t in terms(polynom)
+	    t_idx = findfirst(x -> x == t,all_terms)
+	    if isnothing(t_idx)
+		push!(all_terms,t)
+		C = [C zeros(eltype(C),size(C,1))]
+		t_idx = length(all_terms)
+	    end
+	    C[poly_idx,t_idx] +=  DynamicPolynomials.coefficient(t)
+	end
+	
+    end
+    for t in all_terms
+	ev = exponents(t)
+	#println("Term: $t | coeff: $c |EV: $ev ")
+	for (i, e) in enumerate(ev)
+	    a = center(X)[i] - radius_hyperrectangle(X, i)
+	    b = center(X)[i] + radius_hyperrectangle(X, i)
+	    bern_coeff = calculate_bern_coeff_for_monomial(e, orders[i], a, b)
+	    bern_coeff = [bern_coeff; zeros(maximum(orders)-orders[i])]
+	    all_bern_coeff = push!(all_bern_coeff, bern_coeff)
+	end
+	#display(all_bern_coeff) 
+    end
+    bern_terms_matrix = permutedims(stack(all_bern_coeff))
+    #println("coeff Matrix:")
+    #display(bern_coeff_matrix)
+    return CombinedMultiBernsteinImp(
+	C,
+        bern_terms_matrix,
+        length(all_terms),
+	length(orders),
+        orders,
+        X,
+    )
+end
+
 
 function with_coeffs(row,bern_terms,n)
 	scales = ones(eltype(row),  size(bern_terms,1))
@@ -38,12 +90,11 @@ function init_combined_bernstein_interval(h::Hyperrectangle)
     unfixed_mask = (h.radius .!= 0)
     n = count(unfixed_mask)
     X = Hyperrectangle(h.center[unfixed_mask], h.radius[unfixed_mask])
-    @show X
     #@show unfixed_mask,n
     @polyvar x[1:num_polys]
     bern_terms_matrix  = similar(h.radius, (n+1)*n,2)
     coeff_matrix  = zeros(eltype(h.radius), num_polys ,n+1  )
-    @show coeff_matrix
+    #@show coeff_matrix
     
     # one term x_i for each unfixed variable
     for x_i in eachindex(X.radius)
@@ -122,15 +173,13 @@ function square(multi::CombinedMultiBernsteinImp;use_memory_optimizations=true):
     scaled_b = repeat(scaled,multi.t)
 
     conv = row_convolution_kernel(scaled_a,scaled_b)
-    @show C_rescale
-    @show conv
+
     new_terms = ifelse.(C_rescale .!= 0, conv ./ C_rescale, 0.0)
 
     new_c = similar(multi.coeffs,size(multi.coeffs,1),new_t)
     i =1 
     for c1 in axes(multi.coeffs,2)
 	for c2 in axes(multi.coeffs,2)
-	    @show c1,c2
 	    @views new_c[:,i] .=  multi.coeffs[:,c1] .* multi.coeffs[:,c2]
 	    i+=1
 	end
@@ -139,6 +188,7 @@ function square(multi::CombinedMultiBernsteinImp;use_memory_optimizations=true):
 end
 function elevate_all_to(multi::CombinedMultiBernsteinImp, new_orders::Vector{Int64};use_memory_optimizations=true)
     @assert all(sub -> all(sub .<= new_orders), multi.orders)
+    @show multi
     diffs = new_orders .- multi.orders
     bin_tensor= repeat(binomial_tensor(multi.orders),multi.t)
 
@@ -156,8 +206,11 @@ function add(multi_a::CombinedMultiBernsteinImp, multi_b::CombinedMultiBernstein
     new_order = max.(multi_a.orders, multi_b.orders)
     elevated_a = elevate_all_to(multi_a, new_order) 
     elevated_b = elevate_all_to(multi_b, new_order) 
-    
-    return CombinedMultiBernsteinImp( [elevated_a.coeffs elevated_b.coeffs], [elevated_a.bern_terms ; elevated_b.bern_terms], elevated_a.t + elevated_b.t, elevated_a.n, new_order, elevated_a.X )
+   
+    if use_memory_optimizations 
+	return combine_terms(CombinedMultiBernsteinImp( [elevated_a.coeffs elevated_b.coeffs], [elevated_a.bern_terms ; elevated_b.bern_terms], elevated_a.t + elevated_b.t, elevated_a.n, new_order, elevated_a.X ))
+    end
+	return CombinedMultiBernsteinImp( [elevated_a.coeffs elevated_b.coeffs], [elevated_a.bern_terms ; elevated_b.bern_terms], elevated_a.t + elevated_b.t, elevated_a.n, new_order, elevated_a.X )
 end
 
 
@@ -168,6 +221,9 @@ I.e. yᵢ =  qᵢxᵢ² for each input dimension i
 function quadratic_map_1d(qs, multi::CombinedMultiBernsteinImp; use_memory_optimizations=true)::CombinedMultiBernsteinImp
     quad = square(multi;use_memory_optimizations)
     quad.coeffs .= quad.coeffs .* qs
+    if use_memory_optimizations 
+	return combine_terms(quad)
+    end
     return quad
 end
 
@@ -188,21 +244,22 @@ function quadratic_propagation(a, b, c, multi::CombinedMultiBernsteinImp; use_me
 end
 
 function bounds(multi::CombinedMultiBernsteinImp, X::Hyperrectangle; use_shortcut=true)
+    println("starting bounds")
+    start_time = time()
     lbs = similar(multi.coeffs, size(multi.coeffs,1))
     ubs = similar(multi.coeffs, size(multi.coeffs,1))
     
     order_first_var = multi.orders[1]
-    @show order_first_var
     monomon_coefficients = [ calculate_bern_coeff_for_monomial(e,order_first_var,low(multi.X)[1],high(multi.X)[1]) for e in 0:order_first_var ]
-    for p_idx in axes(multi.coeffs,1)
+    @threads for p_idx in axes(multi.coeffs,1)
 	poly = get_poly(p_idx,multi)
-	@show poly
 	if use_shortcut
 	    lbs[p_idx], ubs[p_idx] = quadrant_ibf_minmax(poly,multi.t,multi.orders,monomon_coefficients, inv(stack(monomon_coefficients)))
 	else
-	    lbs[p_idx], ubs[p_idx]= dense_min_max(poly,multi.t,multi.orders)
+	    lbs[p_idx], ubs[p_idx]= dense_min_max_threaded(poly,multi.t,multi.orders)
 	end
     end
+    println("finshed bounds after $(time()-start_time)")
     return lbs,ubs
 
 end
@@ -220,4 +277,29 @@ function bounds(A::AbstractMatrix, b::AbstractVector, s::CombinedPolyBernsteinIn
     ll, lu = bounds(mapped_interval.Low, mapped_interval.Low.X; use_shortcut)
     ul, uu = bounds(mapped_interval.Up, mapped_interval.Up.X; use_shortcut)
     return ll, uu
+end
+
+function get_term(t_idx, n) 
+    return (t_idx-1) * n +1 : t_idx *n
+end
+"""
+remove duplicate terms
+"""
+function combine_terms(multi::CombinedMultiBernsteinImp)
+   unique_terms = []
+   C =  zeros(eltype(multi.coeffs), size(multi.coeffs,1), 0)   # num_polys×0 matrix
+   for old_term_idx in 1:multi.t 
+	term = multi.bern_terms[ get_term(old_term_idx,multi.n), : ]
+	t_idx = findfirst(x -> x == term,unique_terms)
+	if isnothing(t_idx)
+	    push!(unique_terms,copy(term))
+	    C = [C zeros(eltype(C),size(C,1))]
+	    t_idx = length(unique_terms)
+	end
+	C[:,t_idx] .+=  multi.coeffs[:, old_term_idx]
+    end
+    @show C
+    @show unique_terms
+    return CombinedMultiBernsteinImp(C,vcat(unique_terms...),length(unique_terms),multi.n,multi.orders,multi.X)
+
 end

@@ -30,6 +30,23 @@ function forward_linear(
     end
     return out
 end
+function forward_linear(
+    solver::BernSym,
+    L::NV.LayerNegPosIdx,
+    input::CombinedPolyBernsteinInterval,
+)
+    if solver.common_generators
+        error("unimplemented")
+    else
+        out = interval_map(
+            L.W_neg,
+            L.W_pos,
+            input,
+            L.bias,
+        )
+    end
+    return out
+end
 function forward_linear(solver::BernSym, L::CROWNLayer, input::BernsteinInterval)
     if solver.common_generators
         error("unimplemented")
@@ -76,7 +93,7 @@ end
 function forward_act(
     solver::BernSym,
     L::NV.LayerNegPosIdx{NV.Id},
-    input::BernsteinInterval,
+    input::Union{BernsteinInterval,CombinedPolyBernsteinInterval} ,
     α,
 )
     return input
@@ -84,8 +101,8 @@ end
 
 function forward_act(
     solver::BernSym,
-    L::NV.LayerNegPosIdx{NV.ReLU},
-    input::BernsteinInterval,
+    L::Union{NV.LayerNegPosIdx{NV.ReLU} , CROWNLayer{NV.ReLU}},
+    input::Union{BernsteinInterval,CombinedPolyBernsteinInterval},
     α,
 )
     sym = input
@@ -97,9 +114,15 @@ function forward_act(
     #end
     s = sym
 
-    # take bounds w/o splitting depth for being differentiable
-    ll, lu = bounds(s.Low,s.X)
-    ul, uu = bounds(s.Up,s.X)
+    if s isa BernsteinInterval 
+	ll, lu = bounds(s.Low,s.X)
+	ul, uu = bounds(s.Up,s.X)
+    elseif s isa CombinedPolyBernsteinInterval  
+	ll, lu = bounds(s.Low,s.Low.X)
+	ul, uu = bounds(s.Up,s.Low.X)
+    else 
+	throw("should be one of these two types")
+    end 
 
     if solver.save_bounds
         throw("unimplemented")
@@ -162,10 +185,16 @@ function forward_act(
         println("upper: $(cᵤ[:,3])x^2 +  $(cᵤ[:,2])x + $(cᵤ[:,1])")
     end
 
-    return BernsteinInterval(L̂, Û, input.n,input.X)
+    if s isa BernsteinInterval 
+	return BernsteinInterval(L̂, Û, input.n,input.X)
+    elseif s isa CombinedPolyBernsteinInterval  
+	return CombinedPolyBernsteinInterval(L̂, Û)
+    else 
+	throw("should be one of these two types")
+    end 
 end
 
-function forward_network(solver::BernSym, net::Chain, input::BernsteinInterval)
+function forward_network(solver::BernSym, net::Chain, input::CombinedPolyBernsteinInterval)
     degree = 2
     α0 = initialize_params(net, degree, method = :zero)
     @show α0
@@ -194,7 +223,10 @@ Initialize the symbolic domain corresponding to the given solver with the respec
 function initialize_symbolic_domain(
     solver::BernSym,
     net,
-    input::AbstractHyperrectangle,
+    input::AbstractHyperrectangle; use_combined_repr=true
 )
-    return init_combined_bernstein_interval(input) 
+    if use_combined_repr
+	return init_combined_bernstein_interval(input) 
+    end
+    return init_bernstein_interval(input)
 end

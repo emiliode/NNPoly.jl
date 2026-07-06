@@ -92,7 +92,7 @@ end
 
 function forward_act(
     solver::BernSym,
-    L::NV.LayerNegPosIdx{NV.Id},
+    L::Union{NV.LayerNegPosIdx{NV.Id},CROWNLayer{NV.Id}},
     input::Union{BernsteinInterval,CombinedPolyBernsteinInterval} ,
     α,
 )
@@ -118,8 +118,7 @@ function forward_act(
 	ll, lu = bounds(s.Low,s.X)
 	ul, uu = bounds(s.Up,s.X)
     elseif s isa CombinedPolyBernsteinInterval  
-	ll, lu = bounds(s.Low,s.Low.X)
-	ul, uu = bounds(s.Up,s.Low.X)
+	ll ,lu ,ul, uu = bounds(s)
     else 
 	throw("should be one of these two types")
     end 
@@ -132,7 +131,7 @@ function forward_act(
         #end
     end
 
-    if solver.init
+    #if solver.init
         if solver.init_method == :Chebyshev
             # Chebyshev initialisation
             resl = relax_relu_chebyshev.(ll, lu, 2*ones(Integer, n))
@@ -161,14 +160,14 @@ function forward_act(
         else
             throw(ArgumentError("Initialisation method $(solver.init_method) not known!"))
         end
-    else
+    #else
         #cₗ = [ifelse(l >= 0, [0., 1, 0], ifelse(u <= 0, zeros(3), get_lower_polynomial_shift(l, u, 2, a))) for (l, u, a) in zip(ll, lu, eachcol(α[1,:,:]))]
         #cᵤ = [ifelse(l >= 0, [0., 1, 0], ifelse(u <= 0, zeros(3), get_upper_polynomial_shift(l, u, 2, a))) for (l, u, a) in zip(ul, uu, eachcol(α[2,:,:]))]
         #cₗ = get_lower_polynomial_shift.(ll, lu, 2, eachcol(α[1,:,:]))
         #cᵤ = get_upper_polynomial_shift.(ul, uu, 2, eachcol(α[2,:,:]))
         cₗ = get_lower_polynomial_shift(ll, lu, 2, α[1, :, :]')
         cᵤ = get_upper_polynomial_shift(ul, uu, 2, α[2, :, :]')
-    end
+    #end
 
     #cₗ = vecOfVec2Mat(cₗ)
     #cᵤ = vecOfVec2Mat(cᵤ)
@@ -179,16 +178,20 @@ function forward_act(
     else
         #L̂ = fast_quad_prop(cₗ[:, 3], cₗ[:, 2], cₗ[:, 1], s.Low, ll, lu)
         #Û = fast_quad_prop(cᵤ[:, 3], cᵤ[:, 2], cᵤ[:, 1], s.Up, ul, uu)
-        L̂ = quadratic_propagation(cₗ[:, 3], cₗ[:, 2], cₗ[:, 1], s.Low )
-        Û = quadratic_propagation(cᵤ[:, 3], cᵤ[:, 2], cᵤ[:, 1], s.Up )
-        println("lower: $(cₗ[:,3])x^2 +  $(cₗ[:,2])x + $(cₗ[:,1])")
-        println("upper: $(cᵤ[:,3])x^2 +  $(cᵤ[:,2])x + $(cᵤ[:,1])")
+	if s isa BernsteinInterval
+	    L̂ = quadratic_propagation(cₗ[:, 3], cₗ[:, 2], cₗ[:, 1], s.Low )
+	    Û = quadratic_propagation(cᵤ[:, 3], cᵤ[:, 2], cᵤ[:, 1], s.Up )
+	elseif s isa CombinedPolyBernsteinInterval  
+	    ŝ = quadratic_propagation(cₗ[:, 3], cₗ[:, 2], cₗ[:, 1],cᵤ[:, 3], cᵤ[:, 2], cᵤ[:, 1], s)
+	else 
+	    throw("should be one of these two types")
+	end 
     end
 
     if s isa BernsteinInterval 
 	return BernsteinInterval(L̂, Û, input.n,input.X)
     elseif s isa CombinedPolyBernsteinInterval  
-	return CombinedPolyBernsteinInterval(L̂, Û)
+	return ŝ 
     else 
 	throw("should be one of these two types")
     end 
@@ -197,22 +200,13 @@ end
 function forward_network(solver::BernSym, net::Chain, input::CombinedPolyBernsteinInterval)
     degree = 2
     α0 = initialize_params(net, degree, method = :zero)
-    @show α0
     # convert flat params to per-layer (2,degree,n) arrays
     αs = vec2propagation(net, degree, α0)
-    @show αs
 
     out = input
     for (L, α) in zip(net.layers, αs)
-        @show L
         out = forward_linear(solver, L, out)
-        println("after linear:")
-        @show out.Low
-        @show out.Up
         out = forward_act(solver, L, out, α)
-        println("after ReLU:")
-        @show out.Low
-        @show out.Up
     end
     return out
 end

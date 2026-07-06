@@ -1,5 +1,4 @@
 using LazySets
-using JLD2;
 struct MultiBernsteinImp{M<:Integer,O<:Number,TN<:AbstractArray{O}}
     coefficient_matrix::TN # matrix containing the bernstein terms with coefficients. 
     t::Vector{M} # number of terms

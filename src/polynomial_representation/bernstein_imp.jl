@@ -41,7 +41,7 @@ function calculate_bern_coeff_for_monomial(e, n, a, b)
     coeffs = zeros(n+1)
     for k = 0:n
         for j = 0:k
-            bin = (factorial(k) * factorial(n-j)) / (factorial(n) * factorial(k-j)) # more stable than bin(k,j)/bin(n,j)
+	    bin = (factorial(big(k)) * factorial(big(n-j))) / (factorial(big(n)) * factorial(big(k-j))) # more stable than bin(k,j)/bin(n,j)
             coeffs[k+1] += bin * alphas[j+1]
         end
     end
@@ -182,7 +182,7 @@ calculate :
     ... 
     [(ln choose 0) , ... , (ln choose ln)] padded with zeros
 """
-function binomial_tensor(L::Vector{Int64})
+ function binomial_tensor(L::Vector{Int64})
     ranges = [collect(0:i) for i in L]
 
     N = reshape(L, :, 1)
@@ -202,7 +202,7 @@ function binomial_tensor(L::Vector{Int64})
     C = loggamma.(R .+ 1)
     return exp.(A .- B .- C)
 end
-
+Zygote.@non_differentiable binomial_tensor(L::Vector{Int64})
 
 function elevate_degree(
     bern_imp::BernsteinPolynomialImp,
@@ -235,7 +235,10 @@ function elevate_degree(
     result = result[:, 1:(maximum(new_orders)+1)]
     #println("result of conv: $result")
     #println("C_new_orders: $C_new_orders")
-    result = ifelse.(C_new_orders .!= 0, result ./ C_new_orders, 0.0)
+    #result = ifelse.(C_new_orders .!= 0, result ./ C_new_orders, 0.0)
+
+    safe_denom = ifelse.(C_new_orders .== 0, one(eltype(C_new_orders)), C_new_orders)
+    result = ifelse.(C_new_orders .== 0, zero(eltype(result)), result ./ safe_denom)
 
     return BernsteinPolynomialImp(result, bern_imp.n, bern_imp.t, bern_imp.X, new_orders)
 
@@ -247,25 +250,30 @@ function row_convolution_kernel(T1::AbstractMatrix, T2::AbstractMatrix)
     @assert T1_rows == T2_rows "Row-wise convolution requires same number of rows"
 
     result_cols = T1_cols + T2_cols - 1
-    result = zeros(eltype(T1), T1_rows, result_cols)
+    return [
+	sum(
+	    T1[r,k] * T2[r, col-k+1] for k in max(1,col - T2_cols + 1):min(col,T1_cols) 
+	) for r in 1:T1_rows, col in 1:result_cols
+    ]
+    #result = zeros(eltype(T1), T1_rows, result_cols)
 
-    for row = 1:T1_rows
-        for col = 1:result_cols
+    #for row = 1:T1_rows
+    #    for col = 1:result_cols
 
-            sum = zero(eltype(T1))
+    #        sum = zero(eltype(T1))
 
-            start_k = max(1, col - T2_cols + 1)
-            end_k = min(col, T1_cols)
+    #        start_k = max(1, col - T2_cols + 1)
+    #        end_k = min(col, T1_cols)
 
-            for k = start_k:end_k
-                sum += T1[row, k] * T2[row, col-k+1]
-            end
+    #        for k = start_k:end_k
+    #            sum += T1[row, k] * T2[row, col-k+1]
+    #        end
 
-            result[row, col] = sum
-        end
-    end
+    #        result[row, col] = sum
+    #    end
+    #end
 
-    return result
+    #return result
 end
 
 

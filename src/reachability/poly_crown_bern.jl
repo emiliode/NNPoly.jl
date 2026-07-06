@@ -73,10 +73,8 @@ function NV.forward_network(
     psolver = solver.poly_solver
     lsolver = solver.lin_solver
 
-    println("HILFEE")
     αs_polyₗ = [zeros(3) for _ in 1:length(net.layers)]
     αs_polyᵤ = [zeros(3) for _ in 1:length(net.layers)]
-    display( αs_polyᵤ )
     sₗ = NV.forward_network(psolver, net_poly, input_set, αs_polyₗ)
     sᵤ = NV.forward_network(psolver, net_poly, input_set, αs_polyᵤ)
 
@@ -273,7 +271,7 @@ function initialize_params_bounds(
     if ŝ isa BernsteinInterval 
 	l, u = bounds(ŝ.Low, ŝ.X; ipsolver.use_shortcut)
     elseif ŝ isa CombinedPolyBernsteinInterval  
-	l, u = bounds(ŝ.Low, ŝ.Low.X; ipsolver.use_shortcut)
+	l,u,_, _ = bounds(ŝ ; ipsolver.use_shortcut)
     else 
 	throw("should be one of these two types")
     end 
@@ -401,7 +399,7 @@ Therefore, we can precompute that set and also precompute its bounds and only ha
 function forward_act_stub(
     solver::BernSym,
     L::CROWNLayer{NV.ReLU,MN,BN,AN},
-    input::BernsteinInterval,
+    input::Union{BernsteinInterval,CombinedPolyBernsteinInterval},
     l,
     u,
 #    rs,
@@ -439,62 +437,17 @@ function forward_act_stub(
         cᵤ = get_upper_polynomial_shift(l, u, 2, L.α[:, :, 2])
     end
 
-    @show cₗ
-    @show cᵤ
-    L̂ = quadratic_propagation(cₗ[:,3], cₗ[:,2],cₗ[:, 1],s.Low;use_memory_optimizations=solver.use_memory_optimizations)
-    Û = quadratic_propagation(cᵤ[:,3], cᵤ[:,2],cᵤ[:, 1],s.Up;use_memory_optimizations=solver.use_memory_optimizations)
+    if s isa BernsteinInterval 
+	L̂ = quadratic_propagation(cₗ[:,3], cₗ[:,2],cₗ[:, 1],s.Low;use_memory_optimizations=solver.use_memory_optimizations)
+	Û = quadratic_propagation(cᵤ[:,3], cᵤ[:,2],cᵤ[:, 1],s.Up;use_memory_optimizations=solver.use_memory_optimizations)
 
-    return BernsteinInterval(L̂, Û, input.n, input.X, input.lbs, input.ubs)
+	return BernsteinInterval(L̂, Û, input.n, input.X, input.lbs, input.ubs)
+    elseif s isa CombinedPolyBernsteinInterval  
+	return quadratic_propagation(cₗ[:,3], cₗ[:,2],cₗ[:, 1],cᵤ[:,3], cᵤ[:,2],cᵤ[:, 1], s;use_memory_optimizations=solver.use_memory_optimizations)
+    else 
+	throw("should be one of these two types")
+    end 
 end
-function forward_act_stub(
-    solver::BernSym,
-    L::CROWNLayer{NV.ReLU,MN,BN,AN},
-    input::CombinedPolyBernsteinInterval,
-    l,
-    u,
-#    rs,
-#    cs,
-#    symmetric_factor,
-#    unique_idxs,
-#    duplicate_idxs,
-) where {MN,BN,AN}
-    s = input
-    if solver.init && solver.init_method == :CROWNQuad
-        # CROWNQuad initialisation
-        cₗ = relax_relu_crown_quad_lower_matrix(l, u)
-        cᵤ = relax_relu_crown_quad_upper_matrix(l, u)
-
-        # CROWNQuad is quadratic relaxation, so set first two params
-        L.α[:, 1:2, 1] .= cₗ[:, 2:3]
-        L.α[:, 1:2, 2] .= cᵤ[:, 2:3]
-    elseif solver.init && solver.init_method == :linear
-        # linear CROWN initialisation
-        cₗ = NV.relaxed_relu_gradient_lower.(l, u)
-        cᵤ = NV.relaxed_relu_gradient.(l, u)
-
-        # only need to set the slope, shifting takes care of the rest
-        L.α[:, 1, 1] .= cₗ
-        L.α[:, 1, 2] .= cᵤ
-        # need to set quad-part to zero, because is only initialized with similar(...)
-        L.α[:, 2, 1] .= 0
-        L.α[:, 2, 2] .= 0
-
-        # need full monomials to propagate through quad_prop_common
-        cₗ = get_lower_polynomial_shift(l, u, 2, L.α[:, :, 1])
-        cᵤ = get_upper_polynomial_shift(l, u, 2, L.α[:, :, 2])
-    else
-        cₗ = get_lower_polynomial_shift(l, u, 2, L.α[:, :, 1])
-        cᵤ = get_upper_polynomial_shift(l, u, 2, L.α[:, :, 2])
-    end
-
-    @show cₗ
-    @show cᵤ
-    L̂ = quadratic_propagation(cₗ[:,3], cₗ[:,2],cₗ[:, 1],s.Low;use_memory_optimizations=solver.use_memory_optimizations)
-    Û = quadratic_propagation(cᵤ[:,3], cᵤ[:,2],cᵤ[:, 1],s.Up;use_memory_optimizations=solver.use_memory_optimizations)
-
-    return CombinedPolyBernsteinInterval(L̂, Û, input.lbs, input.ubs )
-end
-
 
 
 """
@@ -563,10 +516,10 @@ function optimise_bounds(
             return loss_fun(ll, uu)
         end
 
-    t_start = time()
-    loss =  optfun(net) 
-    res  = (t_hist= [time() - t_start], y_hist=[loss])
-    #res  =optimise(optfun, net, opt, params = params)
+   # t_start = time()
+    #loss =  optfun(net) 
+    #res  = (t_hist= [time() - t_start], y_hist=[loss])
+    res  =optimise(optfun, net, opt, params = params)
 
     print_results && println("lbs = ", lbs[end])
     print_results && println("ubs = ", ubs[end])

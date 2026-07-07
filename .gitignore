@@ -33,3 +33,7 @@ eval/cifar10/vnnlib/*.vnnlib
 # ignore too large zip files
 eval/cifar10/vnnlib/cifar_radius.zip
 eval/cifar10/vnnlib/cifar_spiral.zip
+
+
+.direnv/*
+.vscode/*

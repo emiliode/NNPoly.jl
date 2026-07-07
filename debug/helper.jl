@@ -1,4 +1,6 @@
-using NNPoly, LazySets, DynamicPolynomials, Test
+using NNPoly, LazySets, DynamicPolynomials, Test, NeuralVerification
+NP = NNPoly 
+NV = NeuralVerification
 
 function forward(net::NV.Chain, x)
     a = x
@@ -141,30 +143,42 @@ function print_multi_bernstein_imp(multi::NP.MultiBernsteinImp, n, X)
         start += multi.t[i] * n
     end
 end
-function print_combined_multi(multi::NP.CombinedMultiBernsteinImp;show_matrices=false)
-    @polyvar x[1:multi.n]
+function print_combined_inter(inter::NP.CombinedPolyBernsteinInterval;show_matrices=false)
+    @polyvar x[1:inter.n]
     println("bern_terms")
-    show_matrices &&@show multi.bern_terms
-    for i in 1:multi.t
-	term_start = (i-1)*multi.n + 1
+    show_matrices &&@show inter.bern_terms
+    for i in 1:inter.t
+	term_start = (i-1)*inter.n + 1
 	println("$i:", imp_to_monomon(
-			    multi.bern_terms[term_start : i* multi.n, :],
-			    multi.n,
+			    inter.bern_terms[ term_start : i* inter.n, :],
+			    inter.n,
 			    1,
-			    multi.orders,
-			    multi.X,
+			    inter.orders,
+			    inter.X,
 			    x))
     end
-    println("polys")
-    show_matrices && @show multi.coeffs
-    for i in  axes(multi.coeffs,1)
+    println("polys Low")
+    show_matrices && @show inter.Low
+    for i in  axes(inter.Low,1)
 	println("$i:", imp_to_monomon(
-			    NP.get_poly(i,multi),
-			    multi.n,
-			    multi.t,
-			    multi.orders,
-			    multi.X,
+			    NP.get_poly_low(i,inter),
+			    inter.n,
+			    inter.t,
+			    inter.orders,
+			    inter.X,
 			    x))
+    end
+    println("polys Up")
+    show_matrices && @show inter.Up
+    for i in  axes(inter.Low,1)
+	println("$i:", imp_to_monomon(
+			    NP.get_poly_up(i,inter),
+			    inter.n,
+			    inter.t,
+			    inter.orders,
+			    inter.X,
+			    x))
+	
 	
     end
 end

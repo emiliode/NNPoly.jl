@@ -1,15 +1,16 @@
 using NNPoly, JLD2, MKL, Dates
-import NNPoly: PolyCROWN, verify_vnnlib
+import NNPoly: PolyCROWN,PolyCROWNBern, verify_vnnlib
 const NP = NNPoly
 
 MNIST_PATH = "./eval/mnist_fc_growing"
 
 println("precompiling ...")
-solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
+#solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
+solver = PolyCROWNBern()
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     "./eval/mnist_fc",
-    logfile = "./eval/mnist_results_PolyCROWN_growing.jld2",
+    logfile = "./eval/mnist_results_PolyCROWNBern_growing.jld2",
     max_properties = 2,
     print_freq = 1,
     n_steps = 10,
@@ -119,7 +120,7 @@ for model_path in model_paths
             end
 
             if verified == "unknown"
-                steps_unknown += 1
+                #steps_unknown += 1
                 if steps_unknown >= patience
                     break
                 end

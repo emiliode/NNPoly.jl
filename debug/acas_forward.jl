@@ -5,22 +5,23 @@ const NV = NeuralVerification
 function run()
 	
     solver = NP.BernSym()
-    logfile = "./debug/acas_forward_all_layers.jl"
+    logfile = "./debug/acas_forward_all_layers.jld2"
     dir = "../vnncomp2022_benchmarks/benchmarks/acasxu"
     loss_fun = NP.bounds_loss_violation_stop
-    loss_fun_name = "bounds_loss_violation_stop"
     f = CSV.File(string(dir, "/instances.csv"), header = false)
 
     # need y history to get access to final loss values
 
+    force_gc = true
     n = length(f)
-    stop_idx =  n 
     networks = String[]
     properties = String[]
-    results = String[]
     y_starts = zeros(n)
     ys = zeros(n)
     y_hists = []
+    t_hists = []
+    lower_bounds = []
+    upper_bounds = []
     t_hists = []
     #all_steps = zeros(Integer, n)
     times = zeros(n)
@@ -69,10 +70,10 @@ function run()
 	start_time = time()
 	input = NP.init_combined_bernstein_interval(input_set)
 	out = NP.forward_network(solver,net,input)
-	lbs ,_ = NP.bounds(out.Low,out.Low.X)
-	_,ubs = NP.bounds(out.Up,out.Up.X)
-	res  = loss_fun(lbs,ubs)
-	end_time = time() - start_time()
+	lbs ,_ ,_,ubs = NP.bounds(out)
+	loss  = loss_fun(lbs,ubs)
+	res  = (t_hist= [time() - start_time], y_hist=[loss])
+	end_time = time() -start_time
 
 	println("\ttime = ", end_time)
         println("--- optimised α ---")
@@ -82,15 +83,18 @@ function run()
 
         push!(networks, netpath)
         push!(properties, propertypath)
-        push!(results, get_sat(lbs[end], ubs[end]))
 	times[i] = end_time
         y_starts[i] = res.y_hist[1]
+	push!(y_hists,  res.y_hist)
         ys[i] = res.y_hist[end]
+	push!(t_hists, res.t_hist)
+	push!(lower_bounds, lbs)
+	push!(upper_bounds, ubs)
 
 
         # also backup, if sth goes wrong later on
         if !isnothing(logfile)
-            save(
+            NP.save(
                 logfile,
                 "properties",
                 properties,
@@ -104,6 +108,10 @@ function run()
                 y_hists,
                 "t_hists",
                 t_hists,
+		"lbs",
+		lower_bounds,
+		"ubs",
+		upper_bounds,
             )
         end
 
@@ -123,7 +131,7 @@ function run()
 
     println("saving results ...")
     if !isnothing(logfile)
-        save(
+        NP.save(
             logfile,
             "properties",
             properties,
@@ -137,14 +145,13 @@ function run()
             y_hists,
             "t_hists",
             t_hists,
+	    "lbs",
+	    lower_bounds,
+	    "ubs",
+	    upper_bounds,
         )
     end
 
-    if save_history
-        return properties, times, y_starts, ys, y_hists, t_hists
-    else
-        return properties, times, y_starts, ys
-    end
 end
 
 run()

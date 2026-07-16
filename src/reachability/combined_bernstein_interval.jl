@@ -275,23 +275,51 @@ function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true)
     order_first_var = interval.orders[1]
     monomon_coefficients = [ calculate_bern_coeff_for_monomial(e,order_first_var,low(interval.X)[1],high(interval.X)[1]) for e in 0:order_first_var ]
     #@threads for p_idx in axes(interval.Low,1)
+    #dense_repr_terms = dense_new(interval.bern_terms,interval.t,interval.orders)
+    #reshape_shape = ntuple(_ -> 1, ndims(dense_repr_terms)-1)...,interval.t
     for p_idx in axes(interval.Low,1)
-	low_poly = get_poly_low(p_idx,interval)
-	up_poly = get_poly_up(p_idx,interval)
-	if use_shortcut
-	    llbsi , lubsi  = quadrant_ibf_minmax(low_poly,interval.t,interval.orders,monomon_coefficients, inv(stack(monomon_coefficients)))
-	    llbs = [llbs..., llbsi]
-	    lubs = [lubs..., lubsi]
-	    ulbsi, uubsi = quadrant_ibf_minmax(up_poly,interval.t,interval.orders,monomon_coefficients, inv(stack(monomon_coefficients)))
-	    ulbs = [ulbs..., ulbsi]
-	    uubs = [uubs..., uubsi]
+	    low_poly = get_poly_low(p_idx,interval)
+	    up_poly = get_poly_up(p_idx,interval)
+        if use_shortcut
+            llbsi , lubsi  = quadrant_ibf_minmax(low_poly,interval.t,interval.orders,monomon_coefficients, inv(stack(monomon_coefficients)))
+            ulbsi, uubsi = quadrant_ibf_minmax(up_poly,interval.t,interval.orders,monomon_coefficients, inv(stack(monomon_coefficients)))
+            llbs = [llbs..., llbsi]
+            lubs = [lubs..., lubsi]
+            ulbs = [ulbs..., ulbsi]
+            uubs = [uubs..., uubsi]
 
-	else
-	    #llbs[p_idx], lubs[p_idx] = dense_min_max_threaded(low_poly,interval.t,interval.orders)
-	    #ulbs[p_idx], uubs[p_idx]= dense_min_max_threaded(up_poly,interval.t,interval.orders)
-	    #llbs[p_idx], lubs[p_idx] = dense_min_max(low_poly,interval.t,interval.orders)
-	    #ulbs[p_idx], uubs[p_idx]= dense_min_max(up_poly,interval.t,interval.orders)
-	end
+        else
+            #begin 
+            #    coeffs_low = reshape(interval.Low[p_idx,:], reshape_shape) 
+            #    poly_low = dropdims(sum(coeffs_low .* dense_repr_terms, dims=ndims(dense_repr_terms)), dims=ndims(dense_repr_terms)) 
+            #    llbsi  = minimum(poly_low)
+            #    lubsi  = maximum(poly_low)
+            #end
+            #GC.gc()
+
+            #begin 
+            #    coeffs_up = reshape(interval.Up[p_idx,:], reshape_shape)
+            #    poly_up = dropdims(sum(coeffs_up .* dense_repr_terms, dims=ndims(dense_repr_terms)), dims=ndims(dense_repr_terms)) 
+            #    ulbsi  = minimum(poly_up)
+            #    uubsi  = maximum(poly_up)
+            #end
+            #GC.gc()
+            #llbs[p_idx], lubs[p_idx] = dense_min_max_threaded(low_poly,interval.t,interval.orders)
+            #ulbs[p_idx], uubs[p_idx]= dense_min_max_threaded(up_poly,interval.t,interval.orders)
+            #low_dense = dense_new(low_poly,interval.t,interval.orders)
+            #llbsi = minimum(low_dense)
+            #lubsi = maximum(low_dense)
+            llbsi ,lubsi = dense_min_max(low_poly,interval.t,interval.orders)
+
+            #up_dense = dense_new(low_poly,interval.t,interval.orders)
+            #ulbsi = minimum(up_dense)
+            #uubsi = maximum(up_dense)
+            ulbsi,uubsi = dense_min_max(up_poly,interval.t,interval.orders)
+            llbs = [llbs..., llbsi]
+            lubs = [lubs..., lubsi]
+            ulbs = [ulbs..., ulbsi]
+            uubs = [uubs..., uubsi]
+        end
     end
     return llbs,lubs,ulbs,uubs
 

@@ -586,6 +586,7 @@ end
 Calculates concrete bounds for A*s + b for BernsteinPoly s with common generators.
 """
 function bounds(A::AbstractMatrix, b::AbstractVector, s::BernsteinInterval; use_shortcut=true)
+    @show A 
     mapped_interval = interval_map(
         min.(0, A),
         max.(0, A),

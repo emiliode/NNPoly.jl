@@ -117,6 +117,67 @@ function forward_act(
     return DiffPolyInterval(L̂, Û, input.lbs, input.ubs)
 end
 
+function forward_act(
+    solver::DiffNNPolySym,
+    L::CROWNLayer{NV.ReLU},
+    input::DiffPolyInterval,
+)
+    sym = input.poly_interval
+    n = size(sym.Low.G, 1)
+    degrees = 2*ones(Integer, n)
+
+    if solver.common_generators
+        s = truncate_desired_common(sym, solver.truncation_terms)
+    else
+        s = truncate_desired(sym, solver.truncation_terms)
+    end
+
+    # take bounds w/o splitting depth for being differentiable
+    ll, lu = bounds(s.Low)
+    ul, uu = bounds(s.Up)
+
+    if solver.save_bounds
+        #ChainRulesCore.ignore_derivatives() do
+        #    input.lbs[L.index] .= max.(ll, input.lbs[L.index])
+        #    input.ubs[L.index] .= min.(uu, input.ubs[L.index])
+        #end
+    end
+
+    if solver.init
+        if solver.init_method == :CROWNQuad
+            # CROWNQuad initialisation
+            cₗ = relax_relu_crown_quad_lower_matrix(ll, lu)
+            cᵤ = relax_relu_crown_quad_upper_matrix(ul, uu)
+
+            # CROWNQuad is quadratic relaxation, so set first two params
+            L.α[:, 1:2, 1] .= cₗ[:,2:3]
+            L.α[:, 1:2, 2] .= cᵤ[:,2:3]
+
+        else
+            throw(ArgumentError("Initialisation method $(solver.init_method) not known!"))
+        end
+    else
+        #cₗ = [ifelse(l >= 0, [0., 1, 0], ifelse(u <= 0, zeros(3), get_lower_polynomial_shift(l, u, 2, a))) for (l, u, a) in zip(ll, lu, eachcol(α[1,:,:]))]
+        #cᵤ = [ifelse(l >= 0, [0., 1, 0], ifelse(u <= 0, zeros(3), get_upper_polynomial_shift(l, u, 2, a))) for (l, u, a) in zip(ul, uu, eachcol(α[2,:,:]))]
+        #cₗ = get_lower_polynomial_shift.(ll, lu, 2, eachcol(α[1,:,:]))
+        #cᵤ = get_upper_polynomial_shift.(ul, uu, 2, eachcol(α[2,:,:]))
+        cₗ = get_lower_polynomial_shift(ll, lu, 2, L.α[:, :, 1])
+        cᵤ = get_upper_polynomial_shift(ul, uu, 2, L.α[:, :, 2])
+    end
+
+    #cₗ = vecOfVec2Mat(cₗ)
+    #cᵤ = vecOfVec2Mat(cᵤ)
+
+    if solver.common_generators
+        L̂, Û = quad_prop_common(cₗ, cᵤ, s.Low, s.Up, ll, lu, ul, uu)
+    else
+        L̂ = fast_quad_prop(cₗ[:, 3], cₗ[:, 2], cₗ[:, 1], s.Low, ll, lu)
+        Û = fast_quad_prop(cᵤ[:, 3], cᵤ[:, 2], cᵤ[:, 1], s.Up, ul, uu)
+    end
+
+    return DiffPolyInterval(L̂, Û, input.lbs, input.ubs)
+end
+
 
 function forward_act(
     solver::DiffNNPolySym,

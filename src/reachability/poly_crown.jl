@@ -295,11 +295,22 @@ function initialize_params_bounds(
         unique_idxs,
         duplicate_idxs,
     )
+    poly_lbs = [l]
+    poly_ubs = [u]
+    for layer in 2:solver.poly_layers
+        s_poly = forward_linear(ipsolver,net[layer],s_poly)
+        l1,_, = bounds(s_poly.poly_interval.Low)
+        _,u1 = bounds(s_poly.poly_interval.Up)
+        s_poly = forward_act(ipsolver,net[layer],s_poly)
+        poly_lbs = [poly_lbs..., l1]
+        poly_ubs = [poly_ubs..., u1]
 
-    lbs_lin, ubs_lin = initialize_params_bounds(solver.lin_solver, net[2:end], 1, s_poly)
+    end
+
+    lbs_lin, ubs_lin = initialize_params_bounds(solver.lin_solver, net[(solver.poly_layers+1):end], 1, s_poly)
     return ŝ,
-    [[l]; lbs_lin],
-    [[u]; ubs_lin],
+    [poly_lbs; lbs_lin],
+    [poly_ubs; ubs_lin],
     rs,
     cs,
     symmetric_factor,
@@ -444,6 +455,8 @@ function forward_act_stub(
         cᵤ = get_upper_polynomial_shift(l, u, 2, L.α[:, :, 2])
     end
 
+    @show cₗ
+    @show cᵤ
     L̂, Û = quad_prop_common!(
         cₗ,
         cᵤ,
@@ -469,6 +482,7 @@ function optimise_bounds(
     params = OptimisationParams(),
     loss_fun = bounds_loss,
     print_results = false,
+    poly_layer=1
 )
     psolver = solver.poly_solver
     # TODO: implement method for Chain
@@ -506,12 +520,16 @@ function optimise_bounds(
                 unique_idxs,
                 duplicate_idxs,
             )
+            for layer in 2:solver.poly_layers
+                s_poly = forward_linear(solver.poly_solver,m[2],s_poly)
+                s_poly = forward_act(solver.poly_solver,m[2],s_poly)
+            end
             s_crown = NV.forward_network(
                 solver.lin_solver,
-                m[2:end],
+                m[(solver.poly_layers+1):end],
                 s_poly,
-                lbs[2:end],
-                ubs[2:end],
+                lbs[(solver.poly_layers+1):end],
+                ubs[(solver.poly_layers+1):end],
             )
 
             ll, lu = bounds(s_crown.Λ, s_crown.λ, s_poly)

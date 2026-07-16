@@ -97,6 +97,7 @@ onnx2CROWNNetwork(
     dtype = dtype,
     degree = degree,
     first_layer_degree = first_layer_degree,
+    poly_layer = solver.poly_layers,
 )
 onnx2CROWNNetwork(
     solver::PolyCROWNBern,
@@ -109,6 +110,7 @@ onnx2CROWNNetwork(
     dtype = dtype,
     degree = degree,
     first_layer_degree = first_layer_degree,
+    poly_layer = solver.poly_layers,
 )
 
 function get_sat(lbs, ubs)

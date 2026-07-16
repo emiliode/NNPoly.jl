@@ -60,10 +60,12 @@ function onnx2CROWNNetwork(
     degree = 1,
     first_layer_degree = -1,
     add_dummy_output_layer = false,
+    poly_layer = 0
 )
     ws, bs = load_network(onnx_file, dtype = dtype)
     start_idx = 1
     stop_idx = add_dummy_output_layer ? length(bs) : length(bs) - 1
+    poly_layers = 2
 
     # is there a better way to expand a scalar to an array?
     if first_layer_degree == -1
@@ -71,8 +73,9 @@ function onnx2CROWNNetwork(
             typeof(degree) <: Number ? [degree for w in ws[start_idx:stop_idx]] : degree
     else
         @assert typeof(degree) <: Number "Setting first_layer_degree and a non-number arg for degree is not supported!"
-        degrees = [[first_layer_degree]; [degree for w in ws[(start_idx+1):stop_idx]]]
+        degrees = [[first_layer_degree for _ in 1:poly_layer]; [degree for w in ws[(start_idx+poly_layers):stop_idx]]]
     end
+    @show degrees
 
     layers = []
     for (W, b, d) in zip(ws[start_idx:stop_idx], bs[start_idx:stop_idx], degrees)

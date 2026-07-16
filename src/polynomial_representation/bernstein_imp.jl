@@ -175,6 +175,27 @@ function translate(poly::BernsteinPolynomialImp, b::Number)
     )
 end
 
+"""
+calculate: 
+    [(l1 choose 0)*...*(ln choose 0), () ]
+"""
+
+function binomial_tensor_dense(L::Vector{Int64})
+    n = length(L)
+    # 1D Binomialkoeffizienten-Vektoren pro Dimension: b_i[k+1] = C(L[i], k), k=0..L[i]
+    b = [
+        exp.(loggamma(L[i]+1) .- loggamma.((0:L[i]) .+ 1) .- loggamma.(L[i] .- (0:L[i]) .+ 1))
+        for i in 1:n
+    ]
+
+    # Tensorprodukt (outer product) aller b[i] -> Shape (L[1]+1, ..., L[n]+1)
+    factors = ntuple(i -> begin
+        shape = ntuple(d -> d == i ? length(b[i]) : 1, n)
+        reshape(b[i], shape...)
+    end,n)
+    return reduce(.*, factors)
+    
+end
 
 """
 calculate : 
@@ -440,6 +461,19 @@ function dense(coefficient_matrix::TN,t::M, orders::Vector{Int64}, idx::Cartesia
     end
     return res
 end
+function outer_product(vs::AbstractVector)
+    N = length(vs)
+    return reduce(
+        (acc, v_idx) -> acc .* reshape(vs[v_idx], ntuple(i -> i == v_idx ? length(vs[v_idx]) : 1, N)...),
+        2:N;
+        init = reshape(vs[1], ntuple(i -> i == 1 ? length(vs[1]) : 1, N)...)
+    )
+end
+function dense_new(coefficient_matrix::TN,t::M, orders::Vector{Int64}) where { M<:Number,O<:Number,TN<:AbstractArray{O}}
+    n = length(orders)
+    return sum( outer_product( [(@view coefficient_matrix[get_term(term_idx, n),:])[i,1:orders[i]+1] for i in 1:n ])  for term_idx in 1:t  )
+            
+end
 
 function dense_min_max(coefficient_matrix::TN, t::M, orders::Vector{Int64}) where { M<:Number,O<:Number,TN<:AbstractArray{O}} 
     min = Inf
@@ -484,6 +518,7 @@ function dense_min_max_threaded(
 
     return minimum(local_min), maximum(local_max)
 end
+
 
 function dense(coefficient_matrix::TN,t::M, orders::Vector{Int64}) where { M<:Number,O<:Number,TN<:AbstractArray{O}} 
     dense_tensor = zeros(Tuple(orders .+ 1))

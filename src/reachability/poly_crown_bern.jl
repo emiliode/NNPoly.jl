@@ -12,6 +12,7 @@
     # use fast bounds computation. Does not work with memory optimisation!
     use_shortcut= true;
     use_memory_optimizations= false;
+    use_dense_repr = true;
 end
 
 
@@ -22,6 +23,7 @@ function PolyCROWNBern(
     initialize = false,
     prune_neurons = false,
     poly_layers = 1,
+    use_dense_repr = true,
 )
     return PolyCROWNBern(
         separate_alpha,
@@ -34,6 +36,7 @@ function PolyCROWNBern(
             use_tightened_bounds = use_tightened_bounds,
             initialize = initialize,
         ),
+        use_dense_repr=use_dense_repr
     )
 end
 
@@ -165,7 +168,7 @@ end
 function initialize_symbolic_domain(
     solver::PolyCROWNBern,
     net::Chain,
-    input::AbstractHyperrectangle;use_combined_repr=true
+    input::AbstractHyperrectangle;use_combined_repr=false, use_dense_repr=true
 )
     return initialize_symbolic_domain(solver.poly_solver, net[1:solver.poly_layers], input; use_combined_repr)
 end
@@ -269,12 +272,14 @@ function initialize_params_bounds(
 
     # for first layer, bounds from s.Low and s.Up are the same
     if ŝ isa BernsteinInterval 
-	l, u = bounds(ŝ.Low, ŝ.X; ipsolver.use_shortcut)
-    elseif ŝ isa CombinedPolyBernsteinInterval  
-	l,u,_, _ = bounds(ŝ ; ipsolver.use_shortcut)
+	    l, u = bounds(ŝ.Low, ŝ.X; ipsolver.use_shortcut)
+    elseif ŝ isa CombinedPolyBernsteinInterval || ŝ isa DenseBernsteinInterval
+	    l,u,_, _ = bounds(ŝ ; ipsolver.use_shortcut)
     else 
-	throw("should be one of these two types")
+	    throw("should be one of these two types")
     end 
+    poly_lbs = [ l ]
+    poly_ubs = [ u ]
     s_poly = forward_act_stub(
         ipsolver,
         net[1],
@@ -287,11 +292,18 @@ function initialize_params_bounds(
     #    unique_idxs,
     #    duplicate_idxs,
     )
+    for layer in 2:solver.poly_layers
+        s_poly = forward_linear(ipsolver,net[layer],s_poly)
+	    l1,_,_,u1 = bounds(s_poly ; ipsolver.use_shortcut)
+        s_poly = forward_act(ipsolver,net[layer],s_poly)
+        poly_lbs = [poly_lbs..., l1]
+        poly_ubs = [poly_ubs..., u1]
+    end
 
-    lbs_lin, ubs_lin = initialize_params_bounds(solver.lin_solver, net[2:end], 1, s_poly; use_bounds_shortcut=solver.use_shortcut)
+    lbs_lin, ubs_lin = initialize_params_bounds(solver.lin_solver, net[(solver.poly_layers+1):end], 1, s_poly; use_bounds_shortcut=solver.use_shortcut)
     return ŝ,
-    [[l]; lbs_lin],
-    [[u]; ubs_lin]
+    [poly_lbs; lbs_lin],
+    [poly_ubs; ubs_lin]
     #rs,
     #cs,
     #symmetric_factor,
@@ -399,7 +411,7 @@ Therefore, we can precompute that set and also precompute its bounds and only ha
 function forward_act_stub(
     solver::BernSym,
     L::CROWNLayer{NV.ReLU,MN,BN,AN},
-    input::Union{BernsteinInterval,CombinedPolyBernsteinInterval},
+    input::Union{BernsteinInterval,CombinedPolyBernsteinInterval,DenseBernsteinInterval},
     l,
     u,
 #    rs,
@@ -438,12 +450,12 @@ function forward_act_stub(
     end
 
     if s isa BernsteinInterval 
-	L̂ = quadratic_propagation(cₗ[:,3], cₗ[:,2],cₗ[:, 1],s.Low;use_memory_optimizations=solver.use_memory_optimizations)
-	Û = quadratic_propagation(cᵤ[:,3], cᵤ[:,2],cᵤ[:, 1],s.Up;use_memory_optimizations=solver.use_memory_optimizations)
+	    L̂ = quadratic_propagation(cₗ[:,3], cₗ[:,2],cₗ[:, 1],s.Low;use_memory_optimizations=solver.use_memory_optimizations)
+	    Û = quadratic_propagation(cᵤ[:,3], cᵤ[:,2],cᵤ[:, 1],s.Up;use_memory_optimizations=solver.use_memory_optimizations)
 
-	return BernsteinInterval(L̂, Û, input.n, input.X, input.lbs, input.ubs)
-    elseif s isa CombinedPolyBernsteinInterval  
-	return quadratic_propagation(cₗ[:,3], cₗ[:,2],cₗ[:, 1],cᵤ[:,3], cᵤ[:,2],cᵤ[:, 1], s;use_memory_optimizations=solver.use_memory_optimizations)
+	    return BernsteinInterval(L̂, Û, input.n, input.X, input.lbs, input.ubs)
+    elseif s isa CombinedPolyBernsteinInterval  || s isa DenseBernsteinInterval
+	    return quadratic_propagation(cₗ[:,3], cₗ[:,2],cₗ[:, 1],cᵤ[:,3], cᵤ[:,2],cᵤ[:, 1], s;use_memory_optimizations=solver.use_memory_optimizations)
     else 
 	throw("should be one of these two types")
     end 
@@ -461,11 +473,11 @@ function optimise_bounds(
     params = OptimisationParams(),
     loss_fun = bounds_loss,
     print_results = false,
-    use_combined_repr = true
+    use_combined_repr = true,
 )
     psolver = solver.poly_solver
     # TODO: implement method for Chain
-    s = initialize_symbolic_domain(solver, net[1:solver.poly_layers], input_set;use_combined_repr)
+    s = initialize_symbolic_domain(solver, net[1:solver.poly_layers], input_set;use_combined_repr, use_dense_repr=solver.use_dense_repr)
 
     # TODO: is there some better way of returning all those precomputed values?
     # bounds before activation in first layer are just interval bounds and don't change
@@ -480,6 +492,7 @@ function optimise_bounds(
         net, lbs, ubs = prune(ZeroPruner(), net, lbs, ubs)
     end
 
+    println("HELLO")
     optfun =
         m -> begin
             if all(ubs[end] .- lbs[end] .== 0)
@@ -499,27 +512,39 @@ function optimise_bounds(
                # unique_idxs,
                # duplicate_idxs,
             )
+            @show "after one layer: " ,s_poly 
+            for layer  in 2:solver.poly_layers
+                s_poly = forward_linear(solver.poly_solver,m[layer],s_poly)
+                ll, lu, ul, uu = bounds(s_poly)
+                s_poly = forward_act(solver.poly_solver,m[layer],s_poly)
+                @show "poly layer bounds: "
+                @show ll
+                @show lu
+                @show ul
+                @show uu
+            end
             s_crown = NV.forward_network(
                 solver.lin_solver,
-                m[2:end],
+                m[(solver.poly_layers + 1):end],
                 s_poly,
-                lbs[2:end],
-                ubs[2:end];
+                lbs[(solver.poly_layers + 1):end],
+                ubs[(solver.poly_layers + 1):end];
 		use_bounds_shortcut=solver.use_shortcut
             )
 
             ll, lu = bounds(s_crown.Λ, s_crown.λ, s_poly;use_shortcut=solver.use_shortcut)
             ul, uu = bounds(s_crown.Γ, s_crown.γ, s_poly;use_shortcut=solver.use_shortcut)
+            @show ll,lu,ul,uu
 
             #loss = sum(uu .- ll)
             #loss = sum(max.(0., uu))  # loss for verifying Ay - b ≤ 0 properties
             return loss_fun(ll, uu)
         end
 
-   # t_start = time()
-    #loss =  optfun(net) 
-    #res  = (t_hist= [time() - t_start], y_hist=[loss])
-    res  =optimise(optfun, net, opt, params = params)
+    t_start = time()
+    loss =  optfun(net) 
+    res  = (t_hist= [time() - t_start], y_hist=[loss])
+    #res  =optimise(optfun, net, opt, params = params)
 
     print_results && println("lbs = ", lbs[end])
     print_results && println("ubs = ", ubs[end])

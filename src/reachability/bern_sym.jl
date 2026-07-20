@@ -259,7 +259,7 @@ Initialize the symbolic domain corresponding to the given solver with the respec
 function initialize_symbolic_domain(
     solver::BernSym,
     net,
-    input::AbstractHyperrectangle; use_combined_repr=false, use_dense_repr=true
+    input::AbstractHyperrectangle; use_combined_repr=true, use_dense_repr=false
 )
     if use_dense_repr
         return init_dense_bernstein_interval(input)

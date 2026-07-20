@@ -306,15 +306,15 @@ function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true)
             #GC.gc()
             #llbs[p_idx], lubs[p_idx] = dense_min_max_threaded(low_poly,interval.t,interval.orders)
             #ulbs[p_idx], uubs[p_idx]= dense_min_max_threaded(up_poly,interval.t,interval.orders)
-            #low_dense = dense_new(low_poly,interval.t,interval.orders)
-            #llbsi = minimum(low_dense)
-            #lubsi = maximum(low_dense)
-            llbsi ,lubsi = dense_min_max(low_poly,interval.t,interval.orders)
+            low_dense = dense_new(low_poly,interval.t,interval.orders)
+            llbsi = minimum(low_dense)
+            lubsi = maximum(low_dense)
+            #llbsi ,lubsi = dense_min_max(low_poly,interval.t,interval.orders)
 
-            #up_dense = dense_new(low_poly,interval.t,interval.orders)
-            #ulbsi = minimum(up_dense)
-            #uubsi = maximum(up_dense)
-            ulbsi,uubsi = dense_min_max(up_poly,interval.t,interval.orders)
+            up_dense = dense_new(up_poly,interval.t,interval.orders)
+            ulbsi = minimum(up_dense)
+            uubsi = maximum(up_dense)
+            #ulbsi,uubsi = dense_min_max(up_poly,interval.t,interval.orders)
             llbs = [llbs..., llbsi]
             lubs = [lubs..., lubsi]
             ulbs = [ulbs..., ulbsi]

@@ -19,11 +19,11 @@ MNIST_PATH = "./eval/mnist_fc"
 #    force_gc = true,
 #)
 
-solver = PolyCROWNBern(use_shortcut=false,poly_layers=1,use_dense_repr=true)
+solver = PolyCROWNBern(use_shortcut=false,poly_layers=1,use_dense_repr=false, use_combined_repr=true)
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     MNIST_PATH,
-    logfile = "./eval/mnist_results_PolyCROWNBern_dense_repr.jld2",
+    logfile = "./eval/mnist_results_PolyCROWNBern_full_dense_bounds.jld2",
     #logfile = "./eval/mnist256x6_results_PolyCROW.jld2",
     max_properties = 1,
     print_freq = 1,
@@ -55,11 +55,11 @@ println("running experiments ...")
 #)
 
 println("PolyCROWNBern ...")
-solver = PolyCROWNBern(use_shortcut=false,poly_layers=1,use_dense_repr=true)
+solver = PolyCROWNBern(use_shortcut=false,poly_layers=1,use_dense_repr=false,use_combined_repr=true)
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     MNIST_PATH,
-    logfile = "./eval/mnist_results_PolyCROWNBern_dense_repr.jld2",
+    logfile = "./eval/mnist_results_PolyCROWNBern_full_dense_bounds.jld2",
     max_properties = Inf,
     print_freq = 5,
     n_steps = 1000,

@@ -13,6 +13,7 @@
     use_shortcut= true;
     use_memory_optimizations= false;
     use_dense_repr = true;
+    use_combined_repr = false;
 end
 
 
@@ -24,6 +25,7 @@ function PolyCROWNBern(
     prune_neurons = false,
     poly_layers = 1,
     use_dense_repr = true,
+    use_combined_repr = false,
 )
     return PolyCROWNBern(
         separate_alpha,
@@ -36,7 +38,8 @@ function PolyCROWNBern(
             use_tightened_bounds = use_tightened_bounds,
             initialize = initialize,
         ),
-        use_dense_repr=use_dense_repr
+        use_dense_repr=use_dense_repr,
+        use_combined_repr = use_combined_repr,
     )
 end
 
@@ -168,9 +171,9 @@ end
 function initialize_symbolic_domain(
     solver::PolyCROWNBern,
     net::Chain,
-    input::AbstractHyperrectangle;use_combined_repr=false, use_dense_repr=true
+    input::AbstractHyperrectangle;use_combined_repr=true, use_dense_repr=false
 )
-    return initialize_symbolic_domain(solver.poly_solver, net[1:solver.poly_layers], input; use_combined_repr)
+    return initialize_symbolic_domain(solver.poly_solver, net[1:solver.poly_layers], input; use_combined_repr, use_dense_repr)
 end
 
 
@@ -473,11 +476,10 @@ function optimise_bounds(
     params = OptimisationParams(),
     loss_fun = bounds_loss,
     print_results = false,
-    use_combined_repr = true,
 )
     psolver = solver.poly_solver
     # TODO: implement method for Chain
-    s = initialize_symbolic_domain(solver, net[1:solver.poly_layers], input_set;use_combined_repr, use_dense_repr=solver.use_dense_repr)
+    s = initialize_symbolic_domain(solver, net[1:solver.poly_layers], input_set;use_combined_repr=solver.use_combined_repr, use_dense_repr=solver.use_dense_repr)
 
     # TODO: is there some better way of returning all those precomputed values?
     # bounds before activation in first layer are just interval bounds and don't change
@@ -492,7 +494,6 @@ function optimise_bounds(
         net, lbs, ubs = prune(ZeroPruner(), net, lbs, ubs)
     end
 
-    println("HELLO")
     optfun =
         m -> begin
             if all(ubs[end] .- lbs[end] .== 0)
@@ -512,16 +513,10 @@ function optimise_bounds(
                # unique_idxs,
                # duplicate_idxs,
             )
-            @show "after one layer: " ,s_poly 
             for layer  in 2:solver.poly_layers
                 s_poly = forward_linear(solver.poly_solver,m[layer],s_poly)
                 ll, lu, ul, uu = bounds(s_poly)
                 s_poly = forward_act(solver.poly_solver,m[layer],s_poly)
-                @show "poly layer bounds: "
-                @show ll
-                @show lu
-                @show ul
-                @show uu
             end
             s_crown = NV.forward_network(
                 solver.lin_solver,
@@ -534,17 +529,16 @@ function optimise_bounds(
 
             ll, lu = bounds(s_crown.Λ, s_crown.λ, s_poly;use_shortcut=solver.use_shortcut)
             ul, uu = bounds(s_crown.Γ, s_crown.γ, s_poly;use_shortcut=solver.use_shortcut)
-            @show ll,lu,ul,uu
 
             #loss = sum(uu .- ll)
             #loss = sum(max.(0., uu))  # loss for verifying Ay - b ≤ 0 properties
             return loss_fun(ll, uu)
         end
 
-    t_start = time()
-    loss =  optfun(net) 
-    res  = (t_hist= [time() - t_start], y_hist=[loss])
-    #res  =optimise(optfun, net, opt, params = params)
+    #t_start = time()
+    #loss =  optfun(net) 
+    #res  = (t_hist= [time() - t_start], y_hist=[loss])
+    res  =optimise(optfun, net, opt, params = params)
 
     print_results && println("lbs = ", lbs[end])
     print_results && println("ubs = ", ubs[end])

@@ -1,4 +1,4 @@
-using DSP
+using FFTW, DSP
 struct DenseBernsteinInterval{N<:Number,O<:Number,TN<:AbstractArray{O},VN<:AbstractArray{N}}
     Low::TN # tensor with dimesions: l1 x ... x l_n x num_polys 
     Up::TN
@@ -41,6 +41,128 @@ function init_dense_bernstein_interval(h::Hyperrectangle)
         Vector{eltype(h.radius)}[]
     )
 end
+function batched_conv(A::AbstractArray, B::AbstractArray)
+    poly_dims_a = size(A)[1:end-1]
+    poly_dims_b = size(B)[1:end-1]
+    @show size(A), size(B)
+    n_a = size(A)[end]
+    n_b = size(B)[end]
+    @assert n_b == 1 || n_a == n_b "batch dim of B must be 1 (broadcast) or match A"
+
+    out_dims = poly_dims_a .+ poly_dims_b .- 1
+    fft_dims = ntuple(identity, length(out_dims))
+    T = promote_type(eltype(A), eltype(B))
+
+    padA = zeros(T, out_dims..., n_a)
+    padB = zeros(T, out_dims..., n_b)
+    padA[axes(A)[1:end-1]..., :] .= A
+    padB[axes(B)[1:end-1]..., :] .= B
+
+    FA = fft(padA, fft_dims)
+    FB = fft(padB, fft_dims)
+    return real.(ifft(FA .* FB, fft_dims))
+end
+function ChainRulesCore.rrule(::typeof(batched_conv), A::AbstractArray, B::AbstractArray)
+    # --- Forward Pass (Exact same logic as the original function) ---
+    poly_dims_a = size(A)[1:end-1]
+    poly_dims_b = size(B)[1:end-1]
+    @show size(A), size(B)
+    n_a = size(A)[end]
+    n_b = size(B)[end]
+    @assert n_b == 1 || n_a == n_b "batch dim of B must be 1 (broadcast) or match A"
+
+    out_dims = poly_dims_a .+ poly_dims_b .- 1
+    fft_dims = ntuple(identity, length(out_dims))
+    T = promote_type(eltype(A), eltype(B))
+
+    padA = zeros(T, out_dims..., n_a)
+    padB = zeros(T, out_dims..., n_b)
+    padA[axes(A)[1:end-1]..., :] .= A
+    padB[axes(B)[1:end-1]..., :] .= B
+
+    FA = fft(padA, fft_dims)
+    FB = fft(padB, fft_dims)
+    
+    Y = real.(ifft(FA .* FB, fft_dims))
+
+    project_A = ProjectTo(A)
+    project_B = ProjectTo(B)
+
+    # --- Backward Pass (Pullback closure) ---
+    function batched_conv_pullback(ΔY_raw)
+        # Unthunk the incoming gradient (Zygote might pass a Thunk)
+        ΔY = unthunk(ΔY_raw)
+        
+        # FFT of the incoming output gradient
+        FΔY = fft(ΔY, fft_dims)
+
+        # 1. Gradient for A: Cross-correlation of ΔY with B
+        # ∇A_padded = ifft( fft(ΔY) .* conj(fft(B)) )
+        ∇A_padded = real.(ifft(FΔY .* conj.(FB), fft_dims))
+        # Crop to the original spatial shape of A
+        ∇A = ∇A_padded[axes(A)...]
+
+        # 2. Gradient for B: Cross-correlation of ΔY with A
+        # ∇B_padded = ifft( fft(ΔY) .* conj(fft(A)) )
+        ∇B_padded = real.(ifft(FΔY .* conj.(FA), fft_dims))
+        # Crop to the original spatial shape of B, but keep A's batch dim for now
+        ∇B_full = ∇B_padded[axes(B)[1:end-1]..., :]
+        
+        # If B was broadcasted (n_b == 1), we must sum the gradients over the batch dimension
+        if n_b == 1 && n_a > 1
+            ∇B = sum(∇B_full, dims=ndims(B))
+        else
+            ∇B = ∇B_full
+        end
+
+        # Return NoTangent() for the function itself, then gradients for A and B
+        return NoTangent(), project_A(∇A), project_B(∇B)
+    end
+
+    return Y, batched_conv_pullback
+end
+
+function batched_square_conv(A::AbstractArray)
+    poly_dims = size(A)[1:end-1]
+    out_dims = 2 .* poly_dims .- 1
+    fft_dims = ntuple(identity, length(out_dims))
+    padA = zeros(eltype(A), out_dims..., size(A)[end])
+    padA[axes(A)[1:end-1]..., :] .= A
+    FA = fft(padA, fft_dims)
+    return real.(ifft(FA.^2, fft_dims))   # nur EINE FFT statt zwei
+end
+function ChainRulesCore.rrule(::typeof(batched_square_conv), A::AbstractArray)
+    # --- Forward Pass ---
+    poly_dims = size(A)[1:end-1]
+    out_dims = 2 .* poly_dims .- 1
+    fft_dims = ntuple(identity, length(out_dims))
+    
+    padA = zeros(eltype(A), out_dims..., size(A)[end])
+    padA[axes(A)[1:end-1]..., :] .= A
+    
+    FA = fft(padA, fft_dims)
+    Y = real.(ifft(FA.^2, fft_dims))
+    
+    project_A = ProjectTo(A)
+
+    # --- Backward Pass ---
+    function batched_square_conv_pullback(ΔY_raw)
+        ΔY = unthunk(ΔY_raw)
+        
+        # FFT of the incoming gradient
+        FΔY = fft(ΔY, fft_dims)
+        
+        # ∇A = 2 * (ΔY ★ A)
+        ∇A_padded = 2 .* real.(ifft(FΔY .* conj.(FA), fft_dims))
+        
+        # Crop back to the original size of A
+        ∇A = ∇A_padded[axes(A)...]
+        
+        return NoTangent(), project_A(∇A)
+    end
+    
+    return Y, batched_square_conv_pullback
+end
 
 function multiply(dense_a::AbstractArray, dense_b::AbstractArray) 
     @assert size(dense_a)[end] == size(dense_b)[end] "both matrices must contain the same number of polynomials"
@@ -48,26 +170,32 @@ function multiply(dense_a::AbstractArray, dense_b::AbstractArray)
     orders_b = [size(dense_b)[1:end - 1]...] .- 1
     num_polys = size(dense_a)[end]
     res_orders = orders_a .+ orders_b
-    C_a = binomial_tensor_dense(orders_a)
-    C_b = binomial_tensor_dense(orders_b)
+    C_a = binomial_tensor_dense_cached(orders_a)
+    C_b = binomial_tensor_dense_cached(orders_b)
 
     scaled_a = dense_a .* C_a
     scaled_b = dense_b .* C_b
 
-    res_conv = stack([DSP.conv(scaled_a[ ntuple(_ -> Colon(),ndims(scaled_a)-1)..., i ] , scaled_b[ ntuple(_ -> Colon(),ndims(scaled_b)-1)..., i ] ) for i in 1:num_polys ])
-    C_rescale = binomial_tensor_dense(res_orders)
+    #res_conv = stack([DSP.conv(scaled_a[ ntuple(_ -> Colon(),ndims(scaled_a)-1)..., i ] , scaled_b[ ntuple(_ -> Colon(),ndims(scaled_b)-1)..., i ] ) for i in 1:num_polys ])
+    res_conv = batched_conv(scaled_a,scaled_b)
+    #@assert isapprox(res_conv,res_conv_batch)
+    C_rescale = binomial_tensor_dense_cached(res_orders)
 
 	return  res_conv ./ C_rescale
 end
 
 function square(dense::AbstractArray)
+    println("HELLO")
     orders = get_orders(dense)
     num_polys = size(dense)[end]
     res_orders = 2 .* orders 
-    C_a = binomial_tensor_dense(orders)
-    C_rescale = binomial_tensor_dense(res_orders)
+    C_a = binomial_tensor_dense_cached(orders)
+    C_rescale = binomial_tensor_dense_cached(res_orders)
     scaled = dense .* C_a
-    res_conv = stack([DSP.conv(scaled[ ntuple(_ -> Colon(),ndims(scaled)-1)..., i ] , scaled[ ntuple(_ -> Colon(),ndims(scaled)-1)..., i ] ) for i in 1:num_polys ])
+    #res_conv = stack([DSP.conv(scaled[ ntuple(_ -> Colon(),ndims(scaled)-1)..., i ] , scaled[ ntuple(_ -> Colon(),ndims(scaled)-1)..., i ] ) for i in 1:num_polys ])
+    res_conv= batched_square_conv(scaled)
+
+    #@assert isapprox(res_conv,res_conv_batch)
 
 	return  res_conv ./ C_rescale
 end
@@ -81,12 +209,14 @@ end
 function elevate(dense::AbstractArray,new_orders::Vector{Int64})
     cur_orders = get_orders(dense)
     diffs = new_orders .- cur_orders  
-    C_cur = binomial_tensor_dense(cur_orders)
-    C_diff = binomial_tensor_dense(diffs)
-    C_new_orders = binomial_tensor_dense(new_orders)
+    C_cur = binomial_tensor_dense_cached(cur_orders)
+    C_diff = binomial_tensor_dense_cached(diffs)
+    C_new_orders = binomial_tensor_dense_cached(new_orders)
 
     scaled_dense = dense .* C_cur
-    res_conv = stack([DSP.conv(scaled_dense[ ntuple(_ -> Colon(),ndims(scaled_dense)-1)..., i ] , C_diff ) for i in axes(scaled_dense, ndims(scaled_dense)) ])
+    #res_conv = stack([DSP.conv(scaled_dense[ ntuple(_ -> Colon(),ndims(scaled_dense)-1)..., i ] , C_diff ) for i in axes(scaled_dense, ndims(scaled_dense)) ])
+    res_conv= batched_conv(scaled_dense,  reshape(C_diff, size(C_diff)...,1))
+    #@assert isapprox(res_conv,res_conv_batch)
 
     return res_conv ./ C_new_orders
 end
@@ -178,13 +308,28 @@ end
 function bounds(inter::DenseBernsteinInterval; use_shortcut)
     dims = ntuple(identity,ndims(inter.Low)-1)
     last_dim = size(inter.Low)[end]
-    @show dims, last_dim 
-    @show minimum(inter.Low; dims)
+
     llbs = reshape(minimum(inter.Low; dims),last_dim)
     lubs = reshape(maximum(inter.Low; dims),last_dim)
     ulbs = reshape(minimum(inter.Up; dims),last_dim)
     uubs = reshape(maximum(inter.Up; dims),last_dim)
     return llbs, lubs, ulbs, uubs
+end
+function outer_bounds(inter::DenseBernsteinInterval; use_shortcut)
+    dims = ntuple(identity,ndims(inter.Low)-1)
+    last_dim = size(inter.Low)[end]
+    llbs = reshape(minimum(inter.Low; dims),last_dim)
+    uubs = reshape(maximum(inter.Up; dims),last_dim)
+    return llbs,  uubs
+end
+function bounds(tensor::AbstractArray; use_shortcut) 
+    dims = ntuple(identity,ndims(tensor)-1)
+    last_dim = size(tensor)[end]
+    ext = extrema(tensor;dims)
+    lbs = reshape(first.(ext),last_dim)
+    ubs = reshape(last.(ext),last_dim)
+    return lbs, ubs
+
 end
 
 """
@@ -197,6 +342,5 @@ function bounds(A::AbstractMatrix, b::AbstractVector, s::DenseBernsteinInterval;
         s,
         b,
     )
-    ll, _ ,_, uu = bounds(mapped_interval; use_shortcut)
-    return ll, uu
+    return outer_bounds(mapped_interval; use_shortcut)
 end

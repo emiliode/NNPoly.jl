@@ -221,12 +221,7 @@ function NV.forward_network(
         )
 
         ll, lu = bounds(Zl.Λ, Zl.γ, input_set; use_shortcut=use_bounds_shortcut)
-        @show "Linear layer bounds: "
-        @show ll
-        @show lu 
         ul, uu = bounds(Zu.Λ, Zu.γ, input_set; use_shortcut=use_bounds_shortcut)
-        @show ul 
-        @show uu
         #ll, lu = bounds(Zl.Λ, Zl.γ, low(input_set), high(input_set))
         #ul, uu = bounds(Zu.Λ, Zu.γ, low(input_set), high(input_set))
 

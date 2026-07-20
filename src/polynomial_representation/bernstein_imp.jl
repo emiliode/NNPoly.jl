@@ -175,11 +175,20 @@ function translate(poly::BernsteinPolynomialImp, b::Number)
     )
 end
 
+
+const _binomial_tensor_cache = Dict{Vector{Int64}, Array{Float64}}()
+function binomial_tensor_dense_cached(L::Vector{Int64})
+    return get!(_binomial_tensor_cache,L) do 
+	    return binomial_tensor_dense(L)
+    end
+end
+Zygote.@non_differentiable binomial_tensor_dense_cached(L::Vector{Int64})
+
+
 """
 calculate: 
     [(l1 choose 0)*...*(ln choose 0), () ]
 """
-
 function binomial_tensor_dense(L::Vector{Int64})
     n = length(L)
     # 1D Binomialkoeffizienten-Vektoren pro Dimension: b_i[k+1] = C(L[i], k), k=0..L[i]

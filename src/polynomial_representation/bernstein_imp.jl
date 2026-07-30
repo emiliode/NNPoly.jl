@@ -176,14 +176,21 @@ function translate(poly::BernsteinPolynomialImp, b::Number)
 end
 
 
-const _binomial_tensor_cache = Dict{Vector{Int64}, Array{Float64}}()
+const _dense_binomial_tensor_cache = Dict{Vector{Int64}, Array{Float64}}()
 function binomial_tensor_dense_cached(L::Vector{Int64})
-    return get!(_binomial_tensor_cache,L) do 
+    return get!(_dense_binomial_tensor_cache,L) do 
 	    return binomial_tensor_dense(L)
     end
 end
 Zygote.@non_differentiable binomial_tensor_dense_cached(L::Vector{Int64})
 
+const _binomial_tensor_cache = Dict{Vector{Int64}, Array{Float64}}()
+function binomial_tensor_cached(L::Vector{Int64})
+    return get!(_binomial_tensor_cache,L) do 
+	    return binomial_tensor(L)
+    end
+end
+Zygote.@non_differentiable binomial_tensor_cached(L::Vector{Int64})
 
 """
 calculate: 
@@ -395,7 +402,7 @@ end
 """
 Calculate bounds by evalueting the terms at (0,0,...) and (1,1,...)
 """
-function quadrant_ibf_minmax(coefficient_matrix::TN, t::M, orders::Vector{Int64}, monomon_coeffs, inverse) where { M<:Number,O<:Number,TN<:AbstractArray{O}}
+function quadrant_ibf_minmax(coefficient_matrix::TN, t::M, orders::Vector{Int64} ) where { M<:Number,O<:Number,TN<:AbstractArray{O}}
 
     
 
@@ -422,29 +429,29 @@ function quadrant_ibf_minmax(coefficient_matrix::TN, t::M, orders::Vector{Int64}
 	end
 	first_row = @view coefficient_matrix[term*nvars + 1,1:orders[1]+1] 
 
-	if any([are_multiples(first_row , monomon_coefficient) for monomon_coefficient in monomon_coeffs])
+	#if any([are_multiples(first_row , monomon_coefficient) for monomon_coefficient in monomon_coeffs])
 	    left_prod *= first_row[1]
 	    right_prod *= first_row[orders[1]+1]
 	    minval += min(left_prod, right_prod)
 	    maxval += max(left_prod, right_prod)
-	else 
-	    #@show first_row
-	    #throw("SHOULD NOT HAPPEN")
-	    original_coeffs = inverse * first_row
-	    if all(original_coeffs .== 0 ) 
-		continue 
-	    end
-	    for row in  monomon_coeffs .* original_coeffs
-		first_idx = 1  
-	    	last_idx  = orders[1] +1  
+	#else 
+	#    #@show first_row
+	#    #throw("SHOULD NOT HAPPEN")
+	#    original_coeffs = inverse * first_row
+	#    if all(original_coeffs .== 0 ) 
+	#	continue 
+	#    end
+	#    for row in  monomon_coeffs .* original_coeffs
+	#	first_idx = 1  
+	#    	last_idx  = orders[1] +1  
 
-	    	left_prod_with_first_row = left_prod * row[first_idx]
-	    	right_prod_with_first_row = right_prod * row[last_idx]
-		minval += min(left_prod_with_first_row, right_prod_with_first_row)
-		maxval += max(left_prod_with_first_row, right_prod_with_first_row)
-	    end
+	#    	left_prod_with_first_row = left_prod * row[first_idx]
+	#    	right_prod_with_first_row = right_prod * row[last_idx]
+	#	minval += min(left_prod_with_first_row, right_prod_with_first_row)
+	#	maxval += max(left_prod_with_first_row, right_prod_with_first_row)
+	#    end
 
-	end
+	#end
 
     end
     return minval, maxval

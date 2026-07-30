@@ -265,62 +265,442 @@ function quadratic_propagation(a_low,  b_low, c_low,a_up, b_up, c_up, inter::Com
     return translate(sum,c_low,c_up)
     
 end
+function unique_idx(term,orders,j)
+    #n = length(orders)
+    #left_prod = one(eltype(term))
+    #right_prod = one(eltype(term))
+    #for row_idx in axes(term,1)
+    #    left_prod *= term[row_idx,1]
+    #    right_prod *= term[row_idx,orders[row_idx]]
+    #end
+    if all(term[1,:] .<= 0.0)
+        return orders[j] + 1,1
+    end 
+        return 1, orders[j] + 1
+end
+
+"""
+Max/Min eines einzelnen Terms (implizite Form), ohne den vollen Tensor zu bilden.
+bvecs[m] ist monoton (steigend oder fallend); a ist der Term-Koeffizient.
+"""
+function term_extrema(term, orders)
+    n = length(orders)
+    left_prod = one(eltype(term))
+    right_prod = one(eltype(term))
+    for row_idx in axes(term,1)
+        left_prod *= term[row_idx,1]
+        right_prod *= term[row_idx,orders[row_idx]+1]
+    end
+    return min(left_prod, right_prod), max(left_prod, right_prod)
+end
+function term_extremas( term,orders)
+    lo = 1
+    hi = 1
+    for i in axes(term,1)
+        left, right = term[i,1], term[i,orders[i]+1]   # bei monotonen Vektoren: O(1) via bv[1],bv[end], hier der Einfachheit halber extrema()
+
+        candidates = (lo*left, lo*right, hi*left, hi*right)
+        lo, hi =  minimum(candidates), maximum(candidates)
+    end
+    return lo, hi
+end
+function term_min_step_along_j(term,orders, j)
+    d = diff(term[j,1:orders[j]+1])                 # Differenzen entlang Dimension j (1D, billig)
+    min_step_j = minimum(abs.(d))      # da bvecs[j] monoton: d hat konsistentes Vorzeichen
+    other_factor = one(eltype(term)) 
+    for m  in axes(term,1)
+        m == j && continue
+	#@assert min(term[m,1],term[m,orders[m]+1]) == term[m,1]
+        other_factor *= min(term[m,1], term[m,orders[m]+1])   # bei monotonen bv: min(bv[1],bv[end])
+    end
+    return min_step_j * abs(other_factor)
+end
+"""
+Schätzt den 'Steilheits'-Beitrag eines Terms zur Dominance-Summe entlang Dimension j,
+nur anhand der beiden Randdifferenzen (0↔1 und deg-1↔deg) statt des vollen Vektors.
+Nutzt aus, dass die konsekutiven Differenzen der Bernstein-Koeffizienten selbst monoton
+sind, sodass Min/Max der Differenzen garantiert an einem der beiden Ränder liegen.
+"""
+function term_diff_bound( term, orders, j)
+    l_j = orders[j] + 1
+
+    # Randdifferenzen entlang j (beide Enden testen, breitere nehmen)
+    left_diff  = abs(term[j,2] - term[j,1])
+    right_diff = abs(term[j,l_j] - term[j,l_j-1])
+    step_j = max(left_diff, right_diff)
+
+    val = step_j * one(eltype(term))
+    for i in axes(term,1)
+        i == j && continue
+        lo, hi = term[i,1], term[i,orders[i]+1]
+        val *= max(abs(lo), abs(hi))   # größte Magnitude der übrigen Faktoren
+    end
+    return val
+end
+
+term_width(term,orders) = ((lo,hi) = term_extrema(term, orders); hi - lo)
+term_width2(term,orders) = ((lo,hi) = term_extremas(term, orders); hi - lo)
+function bound_algo(as,orders::Vector{Int},t::Int,j::Int,constant_terms,term_widths,min_steps_j)
+    n = length(orders)
+    non_constant_indices = Int[]
+    sizehint!(non_constant_indices, t)
+    l_j = orders[j]+1
+    #for t_idx in 1:t
+    #    # all 1. is x^0 -> term is constant with respect to x_j || all 0. is O*x 
+    #    
+	#if #isapprox(as[t_idx], 0) || constant_terms[t_idx,j]
+    #        continue
+    #    end 
+    #    push!(non_constant_indices,t_idx)
+    #end
+    non_constant_mask = .!( isapprox.(as,0) .|| constant_terms[:,j])
+    # exactly one term is non-constant with respect to x_j
+    #if length(non_constant_indices) == 1
+    #    min_idx,max_idx =  as[non_constant_indices[1]] > 0.0 ? (1, l_j ) : (l_j, 1)
+    #    return min_idx:min_idx, max_idx:max_idx
+    #end
+    if count(non_constant_mask) == 1
+        min_idx,max_idx =  as[non_constant_mask][1] > 0.0 ? (1, l_j ) : (l_j, 1)
+        return min_idx:min_idx, max_idx:max_idx
+    end
+    # more than one non constant term therfore continue with monotonicity_test
+    #increasing_mask = as[non_constant_mask] .>= 0
+    increasing_mask = non_constant_mask .&& as .> 0
+    decreasing_mask = non_constant_mask .&& as .< 0
+
+
+    if all(!,increasing_mask)
+        return l_j:l_j, 1:1
+    end
+    if all(!,decreasing_mask)
+        return 1:1, l_j:l_j
+    end
+    
+    #width_dec = sum(term_widths[i]* abs(as[i]) for i in decreasing_indices)
+    width_dec = sum( term_widths[decreasing_mask] .* abs.(as[decreasing_mask]) )
+
+
+    #diff_inc = sum(min_steps_j[i][j]*as[i]  for i in increasing_indices)
+    diff_inc = sum(min_steps_j[increasing_mask,j] .* as[increasing_mask]  )
+    
+    @assert diff_inc >= 0  "$diff_inc , $(as[increasing_indices]),"
+
+    if diff_inc > width_dec
+        return   1:1,l_j:l_j
+    end
+    
+
+    width_inc = sum( term_widths[increasing_mask] .* abs.(as[increasing_mask]) )
+    #width_inc = sum(term_widths[i]* abs(as[i]) for i in increasing_indices)
+    #diff_dec = sum(min_steps_j[i][j]*abs(as[i])  for i in decreasing_indices)
+    diff_dec = sum(min_steps_j[decreasing_mask,j] .* abs.(as[decreasing_mask])  )
+    @assert diff_dec >= 0  "$diff_dec , $(as[decreasing_mask]) "
+    if diff_dec > width_inc
+        return   l_j:l_j,1:1
+    end
+
+    return 1:l_j, 1:l_j
+end
+"""
+Berechnet den Tensor aller Bernstein-Koeffizienten im Suchbereich S = (S[1],...,S[n]),
+indem für jeden Term das Outer-Product der (auf S eingeschränkten) univariaten Faktoren
+gebildet und über alle Terme aufsummiert wird — ohne pro Index einzeln zu iterieren.
+"""
+#function evaluate_reduced_tensor(bern_mat,as, t,n,  S)
+#    out = nothing
+#    for t_idx in 1:t
+#        rows = get_term(t_idx, n)
+#        a = as[t_idx]
+#        iszero(a) && continue
+#        factors = ntuple(n) do m
+#            sub = @view bern_mat[rows[m], S[m]]
+#            shape = ntuple(d -> d == m ? length(S[m]) : 1, n)
+#            reshape(sub, shape...)
+#        end
+#        term = reduce(.*, factors)
+#        if out === nothing
+#            out = a .* term          # Koeffizient hier, nicht via Matrixkopie
+#        else
+#            out .+= a .* term
+#        end
+#    end
+#    return out
+#end
+global calls_0d=0
+global calls_1d=0
+global calls_2d=0
+global calls_higher=0
+function _eval_broadcast(bern_mat, as::Vector{TA}, t, n, S, nonscalar, dims::NTuple{K,Int}) where {K,TA}
+    T = promote_type(eltype(bern_mat), TA)
+        # --- Sonderfall K == 0: reines Skalarprodukt ---
+    if K == 0
+        s = zero(T)
+        for t_idx in 1:t
+            a = as[t_idx]
+            iszero(a) && continue
+            rows = get_term(t_idx, n)
+            p = a
+            @inbounds for m in 1:n
+                p *= bern_mat[rows[m], first(S[m])]
+            end
+            s += p
+        end
+        return (s, s)          # min == max, ein einzelner Punkt
+    end
+    out = zeros(T, dims)
+    for t_idx in 1:t
+        a = as[t_idx]; iszero(a) && continue
+        rows = get_term(t_idx, n)
+        coeff = a
+        @inbounds for m in 1:n
+            length(S[m]) == 1 && (coeff *= bern_mat[rows[m], first(S[m])])
+        end
+        iszero(coeff) && continue
+        factors = ntuple(K) do k          # K compile-time → NTuple{K}, stabil
+            mk = nonscalar[k]
+            sub = @view bern_mat[rows[mk], S[mk]]
+            shape = ntuple(d -> d == k ? dims[k] : 1, K)
+            reshape(sub, shape...)
+        end
+        out .+= coeff .* .*(factors...)
+    end
+    return extrema(out)
+end
+function evaluate_reduced_tensor(bern_mat, as, t, n, S)
+    lens = ntuple(m -> length(S[m]), n)
+    nonscalar = [m for m in 1:n if lens[m] > 1]   # nur die "echten" Dimensionen
+    length(nonscalar) == 0 && (global calls_0d +=1)
+    length(nonscalar) == 1 && (global calls_1d +=1)
+    length(nonscalar) == 2 && (global calls_2d +=1)
+    length(nonscalar) > 2 && (global calls_higher +=1)
+    #@show calls_0d,calls_1d,calls_2d,calls_higher
+    dims = ntuple(k -> lens[nonscalar[k]], length(nonscalar))
+    return _eval_broadcast(bern_mat,as,t,n,S,nonscalar,dims)
+
+end
+#function evaluate_reduced_tensor(bern_mat, as, t, n, S)
+#     
+#    dims = ntuple(m -> length(S[m]), n)
+#    T = promote_type(eltype(bern_mat), eltype(as))
+#    out = zeros(T, dims)
+#    for t_idx in 1:t
+#        a = as[t_idx]
+#        iszero(a) && continue
+#        rows = get_term(t_idx, n)
+#        factors = ntuple(n) do m
+#            sub = @view bern_mat[rows[m], S[m]]
+#            shape = ntuple(d -> d == m ? length(S[m]) : 1, n)
+#            reshape(sub, shape...)
+#        end
+#        # out += a * (f1 ⊗ f2 ⊗ ... ⊗ fn), alles in einem fusionierten Loop
+#        out .+= a .* .*(factors...)
+#    end
+#    return extrema(out)
+#end
+function faster_exact_bounds(as,bern_mat::AbstractArray,orders::AbstractArray,t::Int,constant_terms, term_widths, min_steps_j)
+    n = length(orders)
+    S_max =   Vector{UnitRange{Int64}}(undef, n)
+    S_min = Vector{UnitRange{Int64}}(undef, n)
+    # expand bern_mat 
+
+    for x_i in 1:n
+	S_min[x_i],S_max[x_i] = bound_algo(as,orders,t,x_i,constant_terms,term_widths,min_steps_j)
+    end
+    threshold = 500_000
+    min_possibilites = prod(length, S_min)
+    if min_possibilites > threshold 
+	    println(" $min_possibilites is too much using shortcut")
+
+        nvars = length(orders)
+        b_min = zero(eltype(bern_mat))
+        b_max = zero(eltype(bern_mat))
+
+        for term in 0:(t-1)
+            left_prod  = as[term+1]
+            right_prod = as[term+1]
+
+            for var in 1:nvars
+                coeffs = @view bern_mat[term*nvars  + var, :]
+
+                first_idx = 1  #findfirst(!iszero, coeffs)
+                last_idx  = orders[var] +1  #findlast(!iszero, coeffs)
+
+                left_prod *= coeffs[first_idx]
+                right_prod *= coeffs[last_idx]
+            end
+            b_min += min(left_prod,right_prod)
+            b_max += max(left_prod,right_prod)
+        end
+    elseif S_min == S_max 
+        b_min, b_max = evaluate_reduced_tensor(bern_mat,as,t,n,S_min)
+    else
+        b_min,_ = evaluate_reduced_tensor(bern_mat,as,t,n,S_min)
+        _, b_max = evaluate_reduced_tensor(bern_mat,as,t,n,S_max)
+    end
+    #for idx in  CartesianIndices(Tuple(S_min))
+    #    b =  dense(bern_mat,t,orders,idx)
+    #    if b < b_min 
+    #        b_min = b 
+    #    end
+    #end
+    #b_max = -Inf
+    #for idx in  CartesianIndices(Tuple(S_max))
+    #    b =  dense(bern_mat,t,orders,idx)
+    #    if b > b_max
+    #        b_max = b 
+    #    end
+    #end
+    return b_min, b_max 
+end
+
+function precompute(bern_mat, t, orders) 
+    n = length(orders)
+    constant_terms = BitArray(undef,t, length(orders))
+    for t_idx in 1:t 
+	term = @view bern_mat[get_term(t_idx,n),:]
+	for var in 1:n 
+	    row = @view term[var,1:orders[var]+1]
+	    constant_terms[t_idx,var] = all(x -> isapprox.(x,1.0), row) ||   all(x -> isapprox(x,0.0),row)
+	end
+
+    end
+    term_widths = [term_width2((@view bern_mat[get_term(t_idx,n),:]) ,orders) for t_idx in 1:t ]
+    min_steps_j = [term_min_step_along_j((@view bern_mat[get_term(t_idx, n), :]), orders, j)
+               for t_idx in 1:t, j in 1:n]
+    return constant_terms,term_widths, min_steps_j
+end
 
 function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true)
-    llbs = eltype(interval.Low)[]# similar(interval.Low,1)#, size(interval.Low,1))
-    lubs = eltype(interval.Low)[]# similar(interval.Low,1)#, size(interval.Low,1))
-    ulbs = eltype(interval.Up)[]#similar(interval.Up,1)#, size(interval.Up,1))
-    uubs = eltype(interval.Up)[]#similar(interval.Up,1)#, size(interval.Up,1))
+    num_p = size(interval.Low,1)
+    T = eltype(interval.Low)
+    llbs = Vector{T}(undef,num_p)
+    lubs = Vector{T}(undef,num_p)
+    ulbs = Vector{T}(undef,num_p)
+    uubs = Vector{T}(undef,num_p)
+    TS = Vector{UnitRange{Int64}}
+    lS_mins = Vector{TS}(undef,num_p)
+    lS_maxs = Vector{TS}(undef,num_p)
+    uS_mins = Vector{TS}(undef,num_p)
+    uS_maxs = Vector{TS}(undef,num_p)
+
+    #llbs = eltype(interval.Low)[]# similar(interval.Low,1)#, size(interval.Low,1))
+    #lubs = eltype(interval.Low)[]# similar(interval.Low,1)#, size(interval.Low,1))
+    #ulbs = eltype(interval.Up)[]#similar(interval.Up,1)#, size(interval.Up,1))
+    #uubs = eltype(interval.Up)[]#similar(interval.Up,1)#, size(interval.Up,1))
     
-    order_first_var = interval.orders[1]
-    monomon_coefficients = [ calculate_bern_coeff_for_monomial(e,order_first_var,low(interval.X)[1],high(interval.X)[1]) for e in 0:order_first_var ]
+    #order_first_var = interval.orders[1]
+    #monomon_coefficients = [ calculate_bern_coeff_for_monomial(e,order_first_var,low(interval.X)[1],high(interval.X)[1]) for e in 0:order_first_var ]
+    #inverse = inv(stack(monomon_coefficients))
     #@threads for p_idx in axes(interval.Low,1)
     #dense_repr_terms = dense_new(interval.bern_terms,interval.t,interval.orders)
     #reshape_shape = ntuple(_ -> 1, ndims(dense_repr_terms)-1)...,interval.t
-    for p_idx in axes(interval.Low,1)
+    if use_shortcut 
+	@assert false
+	for p_idx in axes(interval.Low,1)
 	    low_poly = get_poly_low(p_idx,interval)
 	    up_poly = get_poly_up(p_idx,interval)
-        if use_shortcut
-            llbsi , lubsi  = quadrant_ibf_minmax(low_poly,interval.t,interval.orders,monomon_coefficients, inv(stack(monomon_coefficients)))
-            ulbsi, uubsi = quadrant_ibf_minmax(up_poly,interval.t,interval.orders,monomon_coefficients, inv(stack(monomon_coefficients)))
-            llbs = [llbs..., llbsi]
-            lubs = [lubs..., lubsi]
-            ulbs = [ulbs..., ulbsi]
-            uubs = [uubs..., uubsi]
+	    llbsi , lubsi  = quadrant_ibf_minmax(low_poly,interval.t,interval.orders)#,monomon_coefficients, inv(stack(monomon_coefficients)))
+	    ulbsi, uubsi = quadrant_ibf_minmax(up_poly,interval.t,interval.orders)#,monomon_coefficients, inv(stack(monomon_coefficients)))
 
-        else
-            #begin 
-            #    coeffs_low = reshape(interval.Low[p_idx,:], reshape_shape) 
-            #    poly_low = dropdims(sum(coeffs_low .* dense_repr_terms, dims=ndims(dense_repr_terms)), dims=ndims(dense_repr_terms)) 
-            #    llbsi  = minimum(poly_low)
-            #    lubsi  = maximum(poly_low)
-            #end
-            #GC.gc()
+	    llbs[p_idx] = llbsi  
+	    lubs[p_idx] = lubsi  
+	    ulbs[p_idx] = ulbsi  
+	    uubs[p_idx] = uubsi  
+	end
 
-            #begin 
-            #    coeffs_up = reshape(interval.Up[p_idx,:], reshape_shape)
-            #    poly_up = dropdims(sum(coeffs_up .* dense_repr_terms, dims=ndims(dense_repr_terms)), dims=ndims(dense_repr_terms)) 
-            #    ulbsi  = minimum(poly_up)
-            #    uubsi  = maximum(poly_up)
-            #end
-            #GC.gc()
-            #llbs[p_idx], lubs[p_idx] = dense_min_max_threaded(low_poly,interval.t,interval.orders)
-            #ulbs[p_idx], uubs[p_idx]= dense_min_max_threaded(up_poly,interval.t,interval.orders)
-            low_dense = dense_new(low_poly,interval.t,interval.orders)
-            llbsi = minimum(low_dense)
-            lubsi = maximum(low_dense)
-            #llbsi ,lubsi = dense_min_max(low_poly,interval.t,interval.orders)
+	return llbs,lubs, ulbs, uubs
+    end
 
-            up_dense = dense_new(up_poly,interval.t,interval.orders)
-            ulbsi = minimum(up_dense)
-            uubsi = maximum(up_dense)
-            #ulbsi,uubsi = dense_min_max(up_poly,interval.t,interval.orders)
-            llbs = [llbs..., llbsi]
-            lubs = [lubs..., lubsi]
-            ulbs = [ulbs..., ulbsi]
-            uubs = [uubs..., uubsi]
+    t_start = time()
+    c0d = calls_0d
+    c1d = calls_1d
+    c2d = calls_2d
+    chd = calls_higher
+    constant_terms,term_widths , min_steps_j = precompute(interval.bern_terms, interval.t,interval.orders)
+     
+
+    #terms_to_add = []
+    #for t_idx in 1:interval.t 
+    #    first_row = @view interval.bern_terms[(t_idx-1)*interval.n + 1,1:interval.orders[1]+1 ]
+    #    # if multiple of monomon_coefficient normal case otherwise expand into combined terms
+    #        if any(are_multiples(first_row , monomon_coefficient) for monomon_coefficient in monomon_coefficients)
+    #        continue
+    #    end
+    #    original_coeffs = inverse * first_row
+    #        if all(original_coeffs .== 0 ) 
+    #    	    continue 
+    #        end
+    #        for row in  monomon_coefficients .* original_coeffs
+    #        term = [row... zero(size(interval.bern_terms,2)-length(row)); interval.bern_terms[(t_idx-1) *interval.n+2: t_idx*interval.n,:] ]
+    #        push!(terms_to_add, term)
+    #        end
+
+    #end
+    #@assert length(terms_to_add) == 0 "removing the term that is replaced must still be done"
+    #bern_mat = vcat(interval.bern_terms, terms_to_add...)
+    #t += length(terms_to_add)
+
+    # i is row idx for:  [Low; Up]
+    unique_as  =  Vector{Int64}()
+    low_evaluated_poly = Array{Int64}(undef,size(interval.Low,1))
+    for i  in axes(interval.Low,1)
+        idx = findfirst( x -> isapprox((@view interval.Low[i,:]), (@view interval.Low[x,:]) ) , unique_as)
+        if isnothing(idx)
+            push!(unique_as,i)
+            low_evaluated_poly[i] =size(unique_as,1)
+        else 
+            low_evaluated_poly[i] = idx
         end
     end
+    up_evaluated_poly =  Array{Int64}(undef,size(interval.Up,1))
+    for i  in axes(interval.Up,1)
+        idx = findfirst( x -> isapprox((@view interval.Up[i,:]),(@view interval.Up[x,:])) , unique_as)
+        if isnothing(idx)
+            push!(unqiue_as,i + num_p)
+            up_evaluated_poly[i] =size(unique_as,1)
+        else 
+            up_evaluated_poly[i] = idx
+        end
+    end
+    println("saved: $(2*size(interval.Low,1) - size(unique_as,1) )")
+
+    unique_bounds = Array{Tuple{Float64,Float64}}(undef,size(unique_as,1))
+    for i in eachindex(unique_as)
+        p_idx = unique_as[i]
+        if p_idx > num_p
+            unique_bounds[i] = faster_exact_bounds(interval.Up[p_idx-num_p,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j) 
+        else
+            unique_bounds[i] = faster_exact_bounds(interval.Low[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j) 
+        end
+    end
+
+
+
+    for p_idx in axes(interval.Low,1)
+
+        #llbsi, lubsi ,lS_min,lS_max= faster_exact_bounds(interval.Low[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms, term_widths, min_steps_j)
+            #up_dense = dense_new(up_poly,interval.t,interval.orders)
+            #ulbsi = minimum(up_dense)
+            #uubsi = maximum(up_dense)
+            #ulbsi,uubsi = dense_min_max(up_poly,interval.t,interval.orders)
+        #ulbsi, uubsi, uS_min, uS_max = faster_exact_bounds(interval.Up[p_idx,:],interval.bern_terms,interval.orders,interval.t,constant_terms, term_widths,min_steps_j)
+            
+    
+        llbs[p_idx], lubs[p_idx] = unique_bounds[low_evaluated_poly[p_idx]]
+        ulbs[p_idx], uubs[p_idx] = unique_bounds[up_evaluated_poly[p_idx]]
+	   # llbs[p_idx] = llbsi  
+	   # lubs[p_idx] = lubsi  
+	   # ulbs[p_idx] = ulbsi  
+	   # uubs[p_idx] = uubsi  
+
+    end
+    @show time()- t_start
+    c0dn = (calls_0d) - c0d
+    c1dn = (calls_1d) - c1d
+    c2dn = (calls_2d) - c2d
+    chdn = (calls_higher) - chd
+    @show c0dn, c1dn, c2dn,chdn
+    #@show lS_maxs, lS_mins, uS_maxs, uS_mins
     return llbs,lubs,ulbs,uubs
 
 end

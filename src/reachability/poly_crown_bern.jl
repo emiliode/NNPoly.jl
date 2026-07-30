@@ -275,9 +275,9 @@ function initialize_params_bounds(
 
     # for first layer, bounds from s.Low and s.Up are the same
     if ŝ isa BernsteinInterval 
-	    l, u = bounds(ŝ.Low, ŝ.X; ipsolver.use_shortcut)
+	    l, u = bounds(ŝ.Low, ŝ.X; use_shortcut=ipsolver.use_shortcut)
     elseif ŝ isa CombinedPolyBernsteinInterval || ŝ isa DenseBernsteinInterval
-	    l,u,_, _ = bounds(ŝ ; ipsolver.use_shortcut)
+	l,u,_, _ = bounds(ŝ ; use_shortcut=false) #ipsolver.use_shortcut)
     else 
 	    throw("should be one of these two types")
     end 
@@ -535,10 +535,10 @@ function optimise_bounds(
             return loss_fun(ll, uu)
         end
 
-    #t_start = time()
-    #loss =  optfun(net) 
-    #res  = (t_hist= [time() - t_start], y_hist=[loss])
-    res  =optimise(optfun, net, opt, params = params)
+    t_start = time()
+    loss =  optfun(net) 
+    res  = (t_hist= [time() - t_start], y_hist=[loss])
+    #res  =optimise(optfun, net, opt, params = params)
 
     print_results && println("lbs = ", lbs[end])
     print_results && println("ubs = ", ubs[end])

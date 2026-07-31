@@ -6,7 +6,7 @@ MNIST_PATH = "./eval/mnist_fc_growing"
 
 println("precompiling ...")
 #solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
-solver = PolyCROWNBern()
+solver = PolyCROWNBern(use_combined_repr=true, use_dense_repr=false, poly_layers=1, use_shortcut=false)
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     "./eval/mnist_fc",
@@ -56,6 +56,7 @@ for model_path in model_paths
         dtype = Float64,
         degree = 1,
         first_layer_degree = 2,
+	poly_layer=1,
     )
 
     for prop in properties

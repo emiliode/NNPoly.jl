@@ -447,6 +447,7 @@ function _eval_broadcast(bern_mat, as::Vector{TA}, t, n, S, nonscalar, dims::NTu
         end
         return (s, s)          # min == max, ein einzelner Punkt
     end
+    @show dims
     out = zeros(T, dims)
     for t_idx in 1:t
         a = as[t_idx]; iszero(a) && continue
@@ -508,7 +509,7 @@ function faster_exact_bounds(as,bern_mat::AbstractArray,orders::AbstractArray,t:
     end
     threshold = 500_000
     min_possibilites = prod(length, S_min)
-    if min_possibilites > threshold 
+    if min_possibilites > threshold || min_possibilites < 0 # check for overflow
 	    println(" $min_possibilites is too much using shortcut")
 
         nvars = length(orders)

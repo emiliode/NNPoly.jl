@@ -28,10 +28,12 @@ function SparsePolynomial(
     id_dtype = UInt16,
 ) where {N<:Number}
     n = dim(h)
+    @show h
     unfixed_mask = (h.radius .!= 0)
     G = [h.center I(n)[:, unfixed_mask] .* h.radius]
     E = [zeros(exponent_dtype, n) I(n)[:, unfixed_mask]]
     sp = SparsePolynomial(G, E, Vector{id_dtype}(1:n))
+    @show sp
     return sp
 end
 
@@ -435,6 +437,7 @@ end
 Normalize variable ϵᵢ ∈ [l, u] to [-1, 1]
 """
 function normalize_variable(sp::SparsePolynomial, eps_i, l, u)
+    @assert false , "called normalize"
     α = 0.5 * (u - l)
     β = 0.5 * (u + l)
     return substitute_binomial(sp, eps_i, α, β)
@@ -446,6 +449,7 @@ Rescale normalized variable ϵᵢ ∈ [-1, 1] to [l, u]
 """
 # rescale normalized variable to interval [l, u]
 function rescale_variable(sp::SparsePolynomial, eps_i, l, u)
+    @assert false , "rescale called"
     α = 1 / (0.5*(u - l))
     β = -(u + l) / (u - l)
     return substitute_binomial(sp, eps_i, α, β)

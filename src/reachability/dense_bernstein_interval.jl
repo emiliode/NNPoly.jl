@@ -41,6 +41,62 @@ function init_dense_bernstein_interval(h::Hyperrectangle)
         Vector{eltype(h.radius)}[]
     )
 end
+function batched_square_conv_rowwise(A::AbstractArray)
+    # A: (rows, cols)
+    
+    n_rows, n_cols = size(A)
+    
+    out_cols = n_cols + kernel_size - 1
+    T = promote_type(eltype(A), eltype(B))
+    
+    padA = zeros(T, n_rows, out_cols)
+    padB = zeros(T, n_rows, out_cols)
+    
+    padA[:, 1:n_cols] .= A
+    padB[:, 1:kernel_size] .= B
+    
+    # FFT über Spalten (Dimension 2) für jede Reihe
+    FA = fft(padA, [2])
+    FB = fft(padB, [2])
+    
+    # Element-weise Multiplikation
+    Y_fft = FA .* FB
+    
+    # IFFT
+    Y = real.(ifft(Y_fft, [2]))
+    
+    return Y
+end
+function batched_conv_rowwise(A::AbstractArray, B::AbstractArray)
+    # A: (rows, cols)
+    # B: (rows, kernel_size)
+    
+    n_rows, n_cols = size(A)
+    _, kernel_size = size(B)
+    
+    @assert size(B, 1) == n_rows "B must have same number of rows as A"
+    
+    out_cols = n_cols + kernel_size - 1
+    T = promote_type(eltype(A), eltype(B))
+    
+    padA = zeros(T, n_rows, out_cols)
+    padB = zeros(T, n_rows, out_cols)
+    
+    padA[:, 1:n_cols] .= A
+    padB[:, 1:kernel_size] .= B
+    
+    # FFT über Spalten (Dimension 2) für jede Reihe
+    FA = fft(padA, [2])
+    FB = fft(padB, [2])
+    
+    # Element-weise Multiplikation
+    Y_fft = FA .* FB
+    
+    # IFFT
+    Y = real.(ifft(Y_fft, [2]))
+    
+    return Y
+end
 function batched_conv(A::AbstractArray, B::AbstractArray)
     poly_dims_a = size(A)[1:end-1]
     poly_dims_b = size(B)[1:end-1]
@@ -103,9 +159,7 @@ function ChainRulesCore.rrule(::typeof(batched_conv), A::AbstractArray, B::Abstr
         ∇A = ∇A_padded[axes(A)...]
 
         # 2. Gradient for B: Cross-correlation of ΔY with A
-        # ∇B_padded = ifft( fft(ΔY) .* conj(fft(A)) )
         ∇B_padded = real.(ifft(FΔY .* conj.(FA), fft_dims))
-        # Crop to the original spatial shape of B, but keep A's batch dim for now
         ∇B_full = ∇B_padded[axes(B)[1:end-1]..., :]
         
         # If B was broadcasted (n_b == 1), we must sum the gradients over the batch dimension
@@ -342,5 +396,9 @@ function bounds(A::AbstractMatrix, b::AbstractVector, s::DenseBernsteinInterval;
         s,
         b,
     )
+    include("./../debug/helper.jl")
+    print_dense_interval(mapped_interval)
+    ll, lu ,ul, uu = bounds(mapped_interval; use_shortcut)
+    @show ll,lu,ul, uu
     return outer_bounds(mapped_interval; use_shortcut)
 end

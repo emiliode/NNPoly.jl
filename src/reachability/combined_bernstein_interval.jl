@@ -82,48 +82,59 @@ function get_poly_up(poly_idx::Int, interval::CombinedPolyBernsteinInterval)
     return with_coeffs(interval.Up[poly_idx,:],interval.bern_terms, interval.n)
 end
 """
+Construct a bernstein Polynomial repr of l + (u-l)x_i over the input domain [0,1]
+"""
+function init_one_mapped_coeff_mat(poly_idx,num_poly_vars, )
+    coeff_mat = fill(1.0, num_poly_vars, 2)
+    coeff_mat[poly_idx, :] = [0, 1.]
+    return coeff_mat
+end
+"""
 Construct a CombinedBernsteinInterval over h by filling Low and Up with x for the unfixed variables
 """
 function init_combined_bernstein_interval(h::Hyperrectangle)
     num_polys = dim(h)
     unfixed_mask = (h.radius .!= 0)
+    @show unfixed_mask
     n = count(unfixed_mask)
     X = Hyperrectangle(h.center[unfixed_mask], h.radius[unfixed_mask])
     #@show unfixed_mask,n
     @polyvar x[1:num_polys]
-    bern_terms_matrix  = similar(h.radius, (n+1)*n,2)
+    bern_terms_matrix  = ones(eltype(h.radius), (n+1)*n,2)
     coeff_matrix  = zeros(eltype(h.radius), num_polys ,n+1  )
     #@show coeff_matrix
     
     # one term x_i for each unfixed variable
-    for x_i in eachindex(X.radius)
-	bern_terms_matrix_idx = (x_i-1)*n +1
-	bern_terms_matrix[bern_terms_matrix_idx : bern_terms_matrix_idx + n - 1, :]= init_one_coeff_mat(x_i,n,x_i,X)
+    for x_i in 1:n 
+	    bern_terms_matrix_idx = (x_i-1)*n 
+        @show bern_terms_matrix_idx + x_i
+	    bern_terms_matrix[bern_terms_matrix_idx + x_i , 1]= 0.
     end
     # one constant term (1) at the end.
     bern_terms_matrix[(n*n) + 1:(n+1)*n  , :] .=  1.0
 
     # set coefficient vectors 
     for poly_idx in eachindex(h.radius)
-	if unfixed_mask[poly_idx]
-	   x_index =  count(@view unfixed_mask[1:poly_idx]) 
-	   coeff_matrix[poly_idx, x_index]  =1
-	else 
-	    coeff_matrix[poly_idx, n+1]  = h.center[poly_idx]
-	end
+	    if unfixed_mask[poly_idx] # set to l + (u - l)*x 
+	        x_index =  count(@view unfixed_mask[1:poly_idx]) 
+	        coeff_matrix[poly_idx, x_index]  = 2*h.radius[poly_idx] 
+	        coeff_matrix[poly_idx, n+1]  = low(h)[poly_idx]
+	    else 
+	        coeff_matrix[poly_idx, n+1]  = h.center[poly_idx]
+	    end
     end
 
     return CombinedPolyBernsteinInterval(
-	copy(coeff_matrix),coeff_matrix,bern_terms_matrix,n+1,n,fill(1,n),X
-    )
+	    copy(coeff_matrix),coeff_matrix,bern_terms_matrix,n+1,n,fill(1,n),Hyperrectangle(fill(0.5,n),fill(0.5,n))
+        )
 end
 function constant_term(type, n, orders)
     
     term = zeros(type,n,maximum(orders)+1)
     for i in axes(term,1)
-	term[i,1:orders[i]+1] .= one(type)
+	    term[i,1:orders[i]+1] .= one(type)
     end
-    return term
+        return term
 
 end
 function translate(interval::CombinedPolyBernsteinInterval,b)
@@ -170,11 +181,14 @@ function interval_map(W⁻, W⁺, I::CombinedPolyBernsteinInterval, b; use_memor
     return translate(CombinedPolyBernsteinInterval(new_low,new_up,I.bern_terms,I.t, I.n, I.orders, I.X),b)
 end
 
+
 function square(interval::CombinedPolyBernsteinInterval;use_memory_optimizations=true)::CombinedPolyBernsteinInterval 
     new_t = interval.t^2 
     new_orders = 2 .* interval.orders
-    C = repeat(binomial_tensor(interval.orders),interval.t)
-    C_rescale = repeat(binomial_tensor(new_orders),new_t)
+    binom_old = binomial_tensor_cached(interval.orders)
+    binom_new = binomial_tensor_cached(new_orders)
+    C = repeat(binom_old,interval.t)
+    C_rescale = repeat(binom_new,new_t)
     scaled = interval.bern_terms .* C 
     
     scaled_a = reduce(vcat, [
@@ -184,7 +198,8 @@ function square(interval::CombinedPolyBernsteinInterval;use_memory_optimizations
 
     scaled_b = repeat(scaled,interval.t)
 
-    conv = row_convolution_kernel(scaled_a,scaled_b)
+    #conv = row_convolution_kernel(scaled_a,scaled_b)
+    conv = batched_conv_rowwise(scaled_a,scaled_b)
 
     new_terms = ifelse.(C_rescale .!= 0, conv ./ C_rescale, 0.0)
 
@@ -297,6 +312,11 @@ min diff along the j-th dimension of B_term. Requires term to be monotonically i
 function term_min_step_along_j(term,orders, j)
     d = diff(term[j,1:orders[j]+1])                 
     min_step_j = minimum(d)      
+    # must be numerical error, therefore rounding is fine!
+    if min_step_j < 0.0 
+        println("rounding $min_step_j to zero")
+        min_step_j = 0 
+    end
     other_factor = one(eltype(term)) 
     for m  in axes(term,1)
         m == j && continue
@@ -336,7 +356,7 @@ function bound_algo(as,orders::Vector{Int},t::Int,j::Int,constant_terms,term_wid
     end
     
     width_dec = sum( term_widths[decreasing_mask] .* abs.(as[decreasing_mask]) )
-    diff_inc = sum(min_steps_j[increasing_mask,j] .* as[increasing_mask]  )
+    diff_inc = sum(min_steps_j[increasing_mask,j] .* abs.(as[increasing_mask])  )
     
     @assert diff_inc >= 0  "$diff_inc , $(as[increasing_indices]),"
 
@@ -519,7 +539,7 @@ function imp_fast_bounds(as::AbstractArray,bern_mat::AbstractArray,t::Int,orders
     end
     return b_min, b_max
 end
-function faster_exact_bounds(as,bern_mat::AbstractArray,orders::AbstractArray,t::Int,constant_terms, term_widths, min_steps_j)
+function faster_exact_bounds(as,bern_mat::AbstractArray,orders::AbstractArray,t::Int,constant_terms, term_widths, min_steps_j; threshold=5000)
     n = length(orders)
     S_max =   Vector{UnitRange{Int64}}(undef, n)
     S_min = Vector{UnitRange{Int64}}(undef, n)
@@ -528,7 +548,6 @@ function faster_exact_bounds(as,bern_mat::AbstractArray,orders::AbstractArray,t:
     @ignore_derivatives for x_i in 1:n
 	    S_min[x_i],S_max[x_i] = bound_algo(as,orders,t,x_i,constant_terms,term_widths,min_steps_j)
     end
-    threshold = 500_000
     min_possibilites = prod(length, S_min)
     if min_possibilites > threshold || min_possibilites < 0 # check for overflow
 	    println(" $min_possibilites is too much using shortcut")
@@ -557,6 +576,7 @@ function precompute(bern_mat, t, orders)
     term_widths = [term_width((@view bern_mat[get_term(t_idx,n),:]) ,orders) for t_idx in 1:t ]
     min_steps_j = [term_min_step_along_j((@view bern_mat[get_term(t_idx, n), :]), orders, j)
                for t_idx in 1:t, j in 1:n]
+    @assert all(min_steps_j .>= 0) "$bern_mat, $min_steps_j"
     return constant_terms,term_widths, min_steps_j
 end
 
@@ -595,12 +615,12 @@ function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true)
     chd = calls_higher
     constant_terms,term_widths , min_steps_j = @ignore_derivatives precompute(interval.bern_terms, interval.t,interval.orders)
 
-    unique_as  =  Vector{Int64}()
+    unique_as  =  Vector{Tuple{Int64,Bool}}()
     low_evaluated_poly = Array{Int64}(undef,size(interval.Low,1))
     @ignore_derivatives for i  in axes(interval.Low,1)
-        idx = findfirst( x -> isapprox((@view interval.Low[i,:]), (@view interval.Low[x,:]) ) , unique_as)
+        idx = findfirst( x -> isapprox((@view interval.Low[i,:]), (@view interval.Low[x[1],:]) ) , unique_as)
         if isnothing(idx)
-            push!(unique_as,i)
+            push!(unique_as,(i,true))
             low_evaluated_poly[i] =size(unique_as,1)
         else 
             low_evaluated_poly[i] = idx
@@ -609,9 +629,9 @@ function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true)
 
     up_evaluated_poly =  Array{Int64}(undef,size(interval.Up,1))
     @ignore_derivatives for i  in axes(interval.Up,1)
-        idx = findfirst( x -> isapprox((@view interval.Up[i,:]),(@view interval.Up[x,:])) , unique_as)
+        idx = findfirst( x -> isapprox((@view interval.Up[i,:]),( x[2] ? (@view interval.Low[x[1],:]) : @view interval.Up[x[1],:])) , unique_as)
         if isnothing(idx)
-            push!(unqiue_as,i + num_p)
+            push!(unique_as,(i,false))
             up_evaluated_poly[i] =size(unique_as,1)
         else 
             up_evaluated_poly[i] = idx
@@ -620,15 +640,17 @@ function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true)
 
     println("saved: $(2*size(interval.Low,1) - size(unique_as,1) )")
 
+    @show unique_as
     unique_bounds = Zygote.Buffer(Array{Tuple{Float64,Float64}}(undef,1),size(unique_as,1))
     for i in eachindex(unique_as)
-        p_idx = unique_as[i]
-        if p_idx > num_p
-            unique_bounds[i] = faster_exact_bounds(interval.Up[p_idx-num_p,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j) 
-        else
+        p_idx, is_lower = unique_as[i]
+        if is_lower
             unique_bounds[i] = faster_exact_bounds(interval.Low[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j) 
+        else
+            unique_bounds[i] = faster_exact_bounds(interval.Up[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j) 
         end
     end
+    @show unique_bounds
 
 
 

@@ -63,6 +63,14 @@ function get_basis_vectors(
         ) for (i, order) in enumerate(orders)
     ]
 end
+
+"""
+Calculate multivariate bernsten basis for a multivariate polynomial with orders degree over input [0,1]
+"""
+function get_basis_vectors(orders::Vector{Int64})
+    return[ bernstein_basis( order, 0,1) for order in orders ]
+end
+
 """
 Creates a BernsteinPolynomail from the given multivariate polynomial.
 """

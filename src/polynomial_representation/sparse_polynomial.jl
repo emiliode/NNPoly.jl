@@ -33,7 +33,6 @@ function SparsePolynomial(
     G = [h.center I(n)[:, unfixed_mask] .* h.radius]
     E = [zeros(exponent_dtype, n) I(n)[:, unfixed_mask]]
     sp = SparsePolynomial(G, E, Vector{id_dtype}(1:n))
-    @show sp
     return sp
 end
 

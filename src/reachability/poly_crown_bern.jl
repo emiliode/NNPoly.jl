@@ -14,6 +14,7 @@
     use_memory_optimizations= false;
     use_dense_repr = true;
     use_combined_repr = false;
+    threshold = 50;
 end
 
 
@@ -26,6 +27,7 @@ function PolyCROWNBern(
     poly_layers = 1,
     use_dense_repr = true,
     use_combined_repr = false,
+    threshold = 50,
 )
     return PolyCROWNBern(
         separate_alpha,
@@ -40,6 +42,7 @@ function PolyCROWNBern(
         ),
         use_dense_repr=use_dense_repr,
         use_combined_repr = use_combined_repr,
+        threshold = threshold,
     )
 end
 
@@ -277,7 +280,7 @@ function initialize_params_bounds(
     if ŝ isa BernsteinInterval 
 	    l, u = bounds(ŝ.Low, ŝ.X; use_shortcut=ipsolver.use_shortcut)
     elseif ŝ isa CombinedPolyBernsteinInterval || ŝ isa DenseBernsteinInterval
-	l,u,_, _ = bounds(ŝ ; use_shortcut=false) #ipsolver.use_shortcut)
+	l,u,_, _ = bounds(ŝ ; use_shortcut=false, threshold=solver.threshold) #ipsolver.use_shortcut)
     else 
 	    throw("should be one of these two types")
     end 
@@ -297,13 +300,13 @@ function initialize_params_bounds(
     )
     for layer in 2:solver.poly_layers
         s_poly = forward_linear(ipsolver,net[layer],s_poly)
-	    l1,_,_,u1 = bounds(s_poly ; ipsolver.use_shortcut)
+	    l1,_,_,u1 = bounds(s_poly ; ipsolver.use_shortcut, threshold=solver.threshold)
         s_poly = forward_act(ipsolver,net[layer],s_poly)
         poly_lbs = [poly_lbs..., l1]
         poly_ubs = [poly_ubs..., u1]
     end
 
-    lbs_lin, ubs_lin = initialize_params_bounds(solver.lin_solver, net[(solver.poly_layers+1):end], 1, s_poly; use_bounds_shortcut=solver.use_shortcut)
+    lbs_lin, ubs_lin = initialize_params_bounds(solver.lin_solver, net[(solver.poly_layers+1):end], 1, s_poly; use_bounds_shortcut=solver.use_shortcut, threshold=solver.threshold)
     return ŝ,
     [poly_lbs; lbs_lin],
     [poly_ubs; ubs_lin]
@@ -518,7 +521,7 @@ function optimise_bounds(
             )
             for layer  in 2:solver.poly_layers
                 s_poly = forward_linear(solver.poly_solver,m[layer],s_poly)
-                ll, lu, ul, uu = bounds(s_poly)
+                ll, lu, ul, uu = bounds(s_poly; use_shortcut=solver.use_shortcut, threshold=solver.threshold)
                 s_poly = forward_act(solver.poly_solver,m[layer],s_poly)
             end
             s_crown = NV.forward_network(
@@ -527,11 +530,12 @@ function optimise_bounds(
                 s_poly,
                 lbs[(solver.poly_layers + 1):end],
                 ubs[(solver.poly_layers + 1):end];
-		use_bounds_shortcut=solver.use_shortcut
+		use_bounds_shortcut=solver.use_shortcut,
+		threshold=solver.threshold
             )
 
-            ll, lu = bounds(s_crown.Λ, s_crown.λ, s_poly;use_shortcut=solver.use_shortcut)
-            ul, uu = bounds(s_crown.Γ, s_crown.γ, s_poly;use_shortcut=solver.use_shortcut)
+            ll, lu = bounds(s_crown.Λ, s_crown.λ, s_poly;use_shortcut=solver.use_shortcut, threshold=solver.threshold)
+            ul, uu = bounds(s_crown.Γ, s_crown.γ, s_poly;use_shortcut=solver.use_shortcut, threshold=solver.threshold)
 
             #loss = sum(uu .- ll)
             #loss = sum(max.(0., uu))  # loss for verifying Ay - b ≤ 0 properties

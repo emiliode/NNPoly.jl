@@ -95,7 +95,6 @@ Construct a CombinedBernsteinInterval over h by filling Low and Up with x for th
 function init_combined_bernstein_interval(h::Hyperrectangle)
     num_polys = dim(h)
     unfixed_mask = (h.radius .!= 0)
-    @show unfixed_mask
     n = count(unfixed_mask)
     X = Hyperrectangle(h.center[unfixed_mask], h.radius[unfixed_mask])
     #@show unfixed_mask,n
@@ -245,6 +244,7 @@ function elevate_all_to(interval::CombinedPolyBernsteinInterval, new_orders::Vec
 end
 function add(inter_a::CombinedPolyBernsteinInterval, inter_b::CombinedPolyBernsteinInterval;use_memory_optimizations=true) 
     new_order = max.(inter_a.orders, inter_b.orders)
+    @assert all(new_order .<= 3)
     elevated_a = elevate_all_to(inter_a, new_order) 
     elevated_b = elevate_all_to(inter_b, new_order) 
    
@@ -329,13 +329,11 @@ end
 width of a term: max - min 
 """
 term_width(term,orders) = ((lo,hi) = term_extrema(term, orders); hi - lo)
-function bound_algo(as,orders::Vector{Int},t::Int,j::Int,constant_terms,term_widths,min_steps_j)
-    n = length(orders)
-    non_constant_indices = Int[]
-    sizehint!(non_constant_indices, t)
+function bound_algo(as,orders::Vector{Int},t::Int,j::Int,constant_terms,term_widths,non_constant_mask, inc_mask, dec_mask, width_dec_full, width_inc_full , all_diff_dec, all_diff_inc )
     l_j = orders[j]+1
 
-    non_constant_mask = .!( isapprox.(as,0) .|| constant_terms[:,j])
+    non_constant_mask = non_constant_mask .||  .!(constant_terms[:,j])
+    constant_mask = .!non_constant_mask
 
     # exactly one term is non-constant with respect to x_j
     if count(non_constant_mask) == 1
@@ -344,19 +342,20 @@ function bound_algo(as,orders::Vector{Int},t::Int,j::Int,constant_terms,term_wid
     end
     # more than one non constant term therfore continue with monotonicity_test
     #increasing_mask = as[non_constant_mask] .>= 0
-    increasing_mask = non_constant_mask .&& as .> 0
-    decreasing_mask = non_constant_mask .&& as .< 0
 
+    inc_mask = inc_mask .&& non_constant_mask
+    dec_mask = dec_mask .&& non_constant_mask
 
-    if all(!,increasing_mask)
+    if all(!,inc_mask)
         return l_j:l_j, 1:1
     end
-    if all(!,decreasing_mask)
+    if all(!,dec_mask)
         return 1:1, l_j:l_j
     end
     
-    width_dec = sum( term_widths[decreasing_mask] .* abs.(as[decreasing_mask]) )
-    diff_inc = sum(min_steps_j[increasing_mask,j] .* abs.(as[increasing_mask])  )
+    width_dec = width_dec_full -  sum( term_widths[constant_mask] .* abs.(as[constant_mask]) )
+    #diff_inc = sum(min_steps_j[increasing_mask,j] .* abs.(as[increasing_mask])  )
+    diff_inc = all_diff_inc[j]
     
     @assert diff_inc >= 0  "$diff_inc , $(as[increasing_indices]),"
 
@@ -365,8 +364,9 @@ function bound_algo(as,orders::Vector{Int},t::Int,j::Int,constant_terms,term_wid
     end
     
 
-    width_inc = sum( term_widths[increasing_mask] .* abs.(as[increasing_mask]) )
-    diff_dec = sum(min_steps_j[decreasing_mask,j] .* abs.(as[decreasing_mask])  )
+    width_inc = width_inc_full -  sum( term_widths[constant_mask] .* abs.(as[constant_mask]) )
+    #diff_dec = sum(min_steps_j[decreasing_mask,j] .* abs.(as[decreasing_mask])  )
+    diff_dec = all_diff_dec[j]
     @assert diff_dec >= 0  "$diff_dec , $(as[decreasing_mask]) "
     if diff_dec > width_inc
         return   l_j:l_j,1:1
@@ -539,22 +539,40 @@ function imp_fast_bounds(as::AbstractArray,bern_mat::AbstractArray,t::Int,orders
     end
     return b_min, b_max
 end
-function faster_exact_bounds(as,bern_mat::AbstractArray,orders::AbstractArray,t::Int,constant_terms, term_widths, min_steps_j; threshold=5000)
+
+
+function faster_exact_bounds(as,bern_mat::AbstractArray,orders::AbstractArray,t::Int,constant_terms, term_widths, min_steps_j; threshold=5)
     n = length(orders)
     S_max =   Vector{UnitRange{Int64}}(undef, n)
     S_min = Vector{UnitRange{Int64}}(undef, n)
     # expand bern_mat 
 
+    non_constant_alphas = .!( isapprox.(as,0))
+    inc_mask = non_constant_alphas .&& as .> 0 
+    dec_mask = non_constant_alphas .&& .!inc_mask
+
+    width_dec_full = sum( term_widths[dec_mask] .* abs.(as[dec_mask]) )
+    width_inc_full = sum( term_widths[inc_mask] .* abs.(as[inc_mask]) )
+
+    #diff_inc = sum(min_steps_j[increasing_mask,j] .* abs.(as[increasing_mask])  )
+
+    all_diff_inc = min_steps_j' * (as .* inc_mask) # we can ignore constant terms here because min_steps_j is zero for them 
+
+    all_diff_dec = min_steps_j' * (abs.(as) .* dec_mask) # we can ignore constant terms here because min_steps_j is zero for them 
+
     @ignore_derivatives for x_i in 1:n
-	    S_min[x_i],S_max[x_i] = bound_algo(as,orders,t,x_i,constant_terms,term_widths,min_steps_j)
+	    S_min[x_i],S_max[x_i] = bound_algo(as,orders,t,x_i,constant_terms,term_widths, non_constant_alphas, inc_mask, dec_mask ,width_dec_full ,width_inc_full, all_diff_dec, all_diff_inc)
     end
     min_possibilites = prod(length, S_min)
+    @show min_possibilites
     if min_possibilites > threshold || min_possibilites < 0 # check for overflow
 	    println(" $min_possibilites is too much using shortcut")
         b_min, b_max = imp_fast_bounds(as,bern_mat,t,orders)
     elseif S_min == S_max 
+	    println("calculating 1 x $min_possibilite")
         b_min, b_max = evaluate_reduced_tensor(bern_mat,as,t,n,S_min)
     else
+	    println("calculating 2 x $min_possibilites")
         b_min,_ = evaluate_reduced_tensor(bern_mat,as,t,n,S_min)
         _, b_max = evaluate_reduced_tensor(bern_mat,as,t,n,S_max)
     end
@@ -580,7 +598,7 @@ function precompute(bern_mat, t, orders)
     return constant_terms,term_widths, min_steps_j
 end
 
-function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true)
+function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true, threshold=-1)
     num_p = size(interval.Low,1)
     T = eltype(interval.Low)
     llbs = Vector{T}()
@@ -640,17 +658,16 @@ function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true)
 
     println("saved: $(2*size(interval.Low,1) - size(unique_as,1) )")
 
-    @show unique_as
     unique_bounds = Zygote.Buffer(Array{Tuple{Float64,Float64}}(undef,1),size(unique_as,1))
     for i in eachindex(unique_as)
+        println("$i")
         p_idx, is_lower = unique_as[i]
         if is_lower
-            unique_bounds[i] = faster_exact_bounds(interval.Low[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j) 
+            unique_bounds[i] = faster_exact_bounds(interval.Low[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j; threshold) 
         else
-            unique_bounds[i] = faster_exact_bounds(interval.Up[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j) 
+            unique_bounds[i] = faster_exact_bounds(interval.Up[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j; threshold) 
         end
     end
-    @show unique_bounds
 
 
 
@@ -677,14 +694,14 @@ end
 """
 Calculates concrete bounds for A*s + b for BernsteinPoly s with common generators.
 """
-function bounds(A::AbstractMatrix, b::AbstractVector, s::CombinedPolyBernsteinInterval; use_shortcut=true)
+function bounds(A::AbstractMatrix, b::AbstractVector, s::CombinedPolyBernsteinInterval; use_shortcut=true, threshold=-1)
     mapped_interval = interval_map(
         min.(0, A),
         max.(0, A),
         s,
         b,
     )
-    ll, _ ,_, uu = bounds(mapped_interval; use_shortcut)
+    ll, _ ,_, uu = bounds(mapped_interval; use_shortcut , threshold)
     return ll, uu
 end
 

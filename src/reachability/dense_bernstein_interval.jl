@@ -42,30 +42,8 @@ function init_dense_bernstein_interval(h::Hyperrectangle)
     )
 end
 function batched_square_conv_rowwise(A::AbstractArray)
-    # A: (rows, cols)
-    
-    n_rows, n_cols = size(A)
-    
-    out_cols = n_cols + kernel_size - 1
-    T = promote_type(eltype(A), eltype(B))
-    
-    padA = zeros(T, n_rows, out_cols)
-    padB = zeros(T, n_rows, out_cols)
-    
-    padA[:, 1:n_cols] .= A
-    padB[:, 1:kernel_size] .= B
-    
-    # FFT über Spalten (Dimension 2) für jede Reihe
-    FA = fft(padA, [2])
-    FB = fft(padB, [2])
-    
-    # Element-weise Multiplikation
-    Y_fft = FA .* FB
-    
-    # IFFT
-    Y = real.(ifft(Y_fft, [2]))
-    
-    return Y
+    batched_conv_rowwise(A,A)
+
 end
 function batched_conv_rowwise(A::AbstractArray, B::AbstractArray)
     # A: (rows, cols)
@@ -96,6 +74,54 @@ function batched_conv_rowwise(A::AbstractArray, B::AbstractArray)
     Y = real.(ifft(Y_fft, [2]))
     
     return Y
+end
+function ChainRulesCore.rrule(::typeof(batched_conv_rowwise), A::AbstractArray, B::AbstractArray)
+    n_rows, n_cols = size(A)
+    _, kernel_size = size(B)
+    
+    @assert size(B, 1) == n_rows "B must have same number of rows as A"
+    
+    out_cols = n_cols + kernel_size - 1
+    T = promote_type(eltype(A), eltype(B))
+    
+    padA = zeros(T, n_rows, out_cols)
+    padB = zeros(T, n_rows, out_cols)
+    
+    padA[:, 1:n_cols] .= A
+    padB[:, 1:kernel_size] .= B
+    
+    # FFT über Spalten (Dimension 2) für jede Reihe
+    FA = fft(padA, [2])
+    FB = fft(padB, [2])
+    
+    # Element-weise Multiplikation
+    Y_fft = FA .* FB
+    
+    # IFFT
+    Y = real.(ifft(Y_fft, [2]))
+
+    project_A = ProjectTo(A)
+    project_B = ProjectTo(B)
+
+    # --- Backward Pass (Pullback closure) ---
+    function batched_conv_pullback(ΔY_raw)
+        ΔY = unthunk(ΔY_raw)
+        dY = Array(ΔY)
+
+        FdY = fft(dY, [2])
+
+        # Adjoint of circular convolution: multiply by conjugate spectra
+        dA_full = real.(ifft(conj.(FB) .* FdY, [2]))
+        dB_full = real.(ifft(conj.(FA) .* FdY, [2]))
+
+        dA = dA_full[:, 1:n_cols]
+        dB = dB_full[:, 1:kernel_size]
+
+        # Return NoTangent() for the function itself, then gradients for A and B
+        return NoTangent(), project_A(dA), project_B(dB)
+    end
+
+    return Y, batched_conv_pullback
 end
 function batched_conv(A::AbstractArray, B::AbstractArray)
     poly_dims_a = size(A)[1:end-1]

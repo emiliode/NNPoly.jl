@@ -189,7 +189,7 @@ function NV.forward_network(
     ubs::LT;
     from_layer = 1,
     printing = false,
-    use_bounds_shortcut=true,
+    bounds_method=Overapproximate,
     threshold=-1
 ) where {LT}
     lbs_cur = LT()
@@ -221,8 +221,8 @@ function NV.forward_network(
             upper = true,
         )
 
-        ll, lu = bounds(Zl.Λ, Zl.γ, input_set; use_shortcut=use_bounds_shortcut, threshold)
-        ul, uu = bounds(Zu.Λ, Zu.γ, input_set; use_shortcut=use_bounds_shortcut, threshold)
+        ll, lu = bounds(Zl.Λ, Zl.γ, input_set; method=bounds_method, threshold)
+        ul, uu = bounds(Zu.Λ, Zu.γ, input_set; method=bounds_method, threshold)
         #ll, lu = bounds(Zl.Λ, Zl.γ, low(input_set), high(input_set))
         #ul, uu = bounds(Zu.Λ, Zu.γ, low(input_set), high(input_set))
 
@@ -240,7 +240,7 @@ function NV.forward_network(
 end
 
 
-function initialize_params_bounds(solver::aCROWN, net, degree::N, input; use_bounds_shortcut=true, threshold=-1) where {N<:Number}
+function initialize_params_bounds(solver::aCROWN, net, degree::N, input; bounds_method=Overapproximate, threshold=-1) where {N<:Number}
     lbs = [similar(L.bias) for L in net.layers]
     ubs = [similar(L.bias) for L in net.layers]
 
@@ -251,7 +251,7 @@ function initialize_params_bounds(solver::aCROWN, net, degree::N, input; use_bou
     end
 
     isolver = aCROWN(initialize = true, separate_alpha = false)
-    ŝ = NV.forward_network(isolver, net, input, lbs, ubs;use_bounds_shortcut, threshold)
+    ŝ = NV.forward_network(isolver, net, input, lbs, ubs;bounds_method, threshold)
 
     return ŝ.lbs, ŝ.ubs
 end

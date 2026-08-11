@@ -1,4 +1,7 @@
 
+@enum IntervalRepr Dense Imp CombinedImp
+@enum BoundsMethod Overapproximate SmithBoundsOverapproximate SmithBoundsMonomon CalculateAllDense
+
 @with_kw struct PolyCROWNBern <: NV.Solver
     separate_alpha = true
     use_tightened_bounds = true
@@ -9,12 +12,10 @@
     poly_solver = BernSym()
     # solver for linear part
     lin_solver = aCROWN()
-    # use fast bounds computation. Does not work with memory optimisation!
-    use_shortcut= true;
-    use_memory_optimizations= false;
-    use_dense_repr = true;
-    use_combined_repr = false;
-    threshold = 50;
+    use_memory_optimizations = false
+    interval_repr  = Dense
+    bounds_method  = Overapproximate # only relevant if interval_repr is not dense 
+    threshold = 50; # only used for SmithBounds 
 end
 
 
@@ -25,9 +26,9 @@ function PolyCROWNBern(
     initialize = false,
     prune_neurons = false,
     poly_layers = 1,
-    use_dense_repr = true,
-    use_combined_repr = false,
     threshold = 50,
+    interval_repr  = Dense,
+    bounds_method  = Overapproximate # only relevant if interval_repr is not dense 
 )
     return PolyCROWNBern(
         separate_alpha,
@@ -40,9 +41,10 @@ function PolyCROWNBern(
             use_tightened_bounds = use_tightened_bounds,
             initialize = initialize,
         ),
-        use_dense_repr=use_dense_repr,
-        use_combined_repr = use_combined_repr,
-        threshold = threshold,
+        use_memory_optimizations = false,
+        interval_repr,
+        bounds_method,
+        threshold,
     )
 end
 
@@ -174,9 +176,9 @@ end
 function initialize_symbolic_domain(
     solver::PolyCROWNBern,
     net::Chain,
-    input::AbstractHyperrectangle;use_combined_repr=true, use_dense_repr=false
+    input::AbstractHyperrectangle; repr
 )
-    return initialize_symbolic_domain(solver.poly_solver, net[1:solver.poly_layers], input; use_combined_repr, use_dense_repr)
+    return initialize_symbolic_domain(solver.poly_solver, net[1:solver.poly_layers], input; repr)
 end
 
 
@@ -264,7 +266,7 @@ function initialize_params_bounds(
         init_method = psolver.init_method,
         save_bounds = psolver.save_bounds,
         common_generators = psolver.common_generators,
-        use_shortcut = solver.use_shortcut,
+        bounds_method = solver.bounds_method,
         use_memory_optimizations = solver.use_memory_optimizations,
     )
     ŝ = forward_linear(ipsolver, net[1], input)
@@ -278,9 +280,9 @@ function initialize_params_bounds(
 
     # for first layer, bounds from s.Low and s.Up are the same
     if ŝ isa BernsteinInterval 
-	    l, u = bounds(ŝ.Low, ŝ.X; use_shortcut=ipsolver.use_shortcut)
+	    l, u = bounds(ŝ.Low, ŝ.X; method=solver.bounds_method)
     elseif ŝ isa CombinedPolyBernsteinInterval || ŝ isa DenseBernsteinInterval
-	l,u,_, _ = bounds(ŝ ; use_shortcut=false, threshold=solver.threshold) #ipsolver.use_shortcut)
+	l,u,_, _ = bounds(ŝ ; method=solver.bounds_method, threshold=solver.threshold) #ipsolver.use_shortcut)
     else 
 	    throw("should be one of these two types")
     end 
@@ -306,7 +308,7 @@ function initialize_params_bounds(
         poly_ubs = [poly_ubs..., u1]
     end
 
-    lbs_lin, ubs_lin = initialize_params_bounds(solver.lin_solver, net[(solver.poly_layers+1):end], 1, s_poly; use_bounds_shortcut=solver.use_shortcut, threshold=solver.threshold)
+    lbs_lin, ubs_lin = initialize_params_bounds(solver.lin_solver, net[(solver.poly_layers+1):end], 1, s_poly; bounds_method=solver.bounds_method, threshold=solver.threshold)
     return ŝ,
     [poly_lbs; lbs_lin],
     [poly_ubs; ubs_lin]
@@ -481,8 +483,7 @@ function optimise_bounds(
     print_results = false,
 )
     psolver = solver.poly_solver
-    # TODO: implement method for Chain
-    s = initialize_symbolic_domain(solver, net[1:solver.poly_layers], input_set;use_combined_repr=solver.use_combined_repr, use_dense_repr=solver.use_dense_repr)
+    s = initialize_symbolic_domain(solver, net[1:solver.poly_layers], input_set;repr=solver.interval_repr)
 
     # TODO: is there some better way of returning all those precomputed values?
     # bounds before activation in first layer are just interval bounds and don't change
@@ -521,7 +522,7 @@ function optimise_bounds(
             )
             for layer  in 2:solver.poly_layers
                 s_poly = forward_linear(solver.poly_solver,m[layer],s_poly)
-                ll, lu, ul, uu = bounds(s_poly; use_shortcut=solver.use_shortcut, threshold=solver.threshold)
+                ll, lu, ul, uu = bounds(s_poly; method=solver.bounds_method, threshold=solver.threshold)
                 s_poly = forward_act(solver.poly_solver,m[layer],s_poly)
             end
             s_crown = NV.forward_network(
@@ -530,12 +531,12 @@ function optimise_bounds(
                 s_poly,
                 lbs[(solver.poly_layers + 1):end],
                 ubs[(solver.poly_layers + 1):end];
-		use_bounds_shortcut=solver.use_shortcut,
-		threshold=solver.threshold
+		        bounds_method=solver.bounds_method,
+		        threshold=solver.threshold
             )
 
-            ll, lu = bounds(s_crown.Λ, s_crown.λ, s_poly;use_shortcut=solver.use_shortcut, threshold=solver.threshold)
-            ul, uu = bounds(s_crown.Γ, s_crown.γ, s_poly;use_shortcut=solver.use_shortcut, threshold=solver.threshold)
+            ll, lu = bounds(s_crown.Λ, s_crown.λ, s_poly;method=solver.bounds_method, threshold=solver.threshold)
+            ul, uu = bounds(s_crown.Γ, s_crown.γ, s_poly;method=solver.bounds_method, threshold=solver.threshold)
 
             #loss = sum(uu .- ll)
             #loss = sum(max.(0., uu))  # loss for verifying Ay - b ≤ 0 properties

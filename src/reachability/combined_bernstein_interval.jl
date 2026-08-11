@@ -18,6 +18,190 @@ function CombinedPolyBernsteinInterval(Low::TN, Up::TN, bern_terms::TN, t::M, n:
     return CombinedPolyBernsteinInterval(Low, Up,bern_terms, t, n, orders, X, Vector{Vector{N}}(), Vector{Vector{N}}())
 end
 
+# fix coefficient table for x^e = ((x'+1)/2)^e, e ∈ {0,1,2} 
+const COEFFS2 = (
+    (1.0,),            # e = 0: (x+1)/2^0 = 1*x^0
+    (0.5, 0.5),        # e = 1: (x+1)/2 = 1/2 x^0 + 1/2x^1 
+    (0.25, 0.5, 0.25), # e = 2: (x/2 + 1/2)^2 = x^2/4 + 2* x/2 * 1/2 + 1/4 = 1/4*x^0 + 1/2*x^1 + 1/4*x^2
+)
+function map_sp_to_correct_interval(E::AbstractArray{T}, G_Low::AbstractArray{T}, G_Up::AbstractArray) where{T} 
+    p, h = size(E)
+    n = size(G_Low, 1)
+    @assert size(G_Low, 2) == h "E and G_Low need the same amount of columns"
+    @assert size(G_Up, 2) == h "E and G_Up need the same amount of columns"
+    @assert all(x -> 0 <= x <= 2, E) "this function requires degree <= 2 per variable."
+ 
+    acc_low = Dict{NTuple{p,Int8}, Vector{T}}()
+    acc_up = Dict{NTuple{p,Int8}, Vector{T}}()
+    sizehint!(acc_low, min(h * 4, 3^min(p, 20)))   
+    sizehint!(acc_up, min(h * 4, 3^min(p, 20)))   
+ 
+    @inbounds for i in 1:h
+        e = ntuple(k -> E[k, i], p)
+        cvecs = ntuple(k -> COEFFS2[e[k] + 1], p)
+        gcol_low  = @view G_Low[:, i]
+        gcol_up  = @view G_Up[:, i]
+ 
+        for jt in Iterators.product(ntuple(k -> 0:e[k], p)...)
+            coeff = 1.0
+            for k in 1:p
+                coeff *= cvecs[k][jt[k] + 1]
+            end
+            key = NTuple{p,Int8}(jt)
+ 
+
+            v_low = get(acc_low, key, nothing)
+            if v_low === nothing
+                acc_low[key] = coeff .* collect(gcol_low)
+                acc_up[key] = coeff .* collect(gcol_up)
+            else
+                v_up = get(acc_up,key,nothing)
+                v_low .+= coeff .* gcol_low
+                v_up .+= coeff .* gcol_up
+            end
+        end
+    end
+ 
+    hnew = length(acc_low)
+    Enew = Matrix{Int}(undef, p, hnew)
+    Gnew_Low = Matrix{T}(undef, n, hnew)
+    Gnew_Up = Matrix{T}(undef, n, hnew)
+    for (col, (j, g)) in enumerate(acc_low)
+        Enew[:, col] .= j
+        Gnew_Low[:, col] .= g
+    end
+    for (col, (j,g)) in enumerate(acc_up)
+        Gnew_Up[:,col] .= g
+    end
+
+    return  Enew, Gnew_Low, Gnew_Up
+end
+
+function ChainRulesCore.rrule(::typeof(map_sp_to_correct_interval),
+                             E::AbstractArray{T}, G_Low::AbstractArray{T},
+                             G_Up::AbstractArray) where {T}
+    p, h = size(E)
+    n = size(G_Low, 1)
+
+    # --- Forward pass, while recording the scatter structure ---
+
+    acc_low = Dict{NTuple{p,Int8}, Vector{T}}()
+    acc_up  = Dict{NTuple{p,Int8}, Vector{T}}()
+    key_to_col = Dict{NTuple{p,Int8}, Int}()   
+
+    # contributions[i] = Vector of (out_col::Int, coeff::Float64)
+    contributions = [Tuple{Int,Float64}[] for _ in 1:h]
+
+    ncols = 0
+    @inbounds for i in 1:h
+        e = ntuple(k -> E[k, i], p)
+        cvecs = ntuple(k -> COEFFS2[e[k] + 1], p)
+        gcol_low = @view G_Low[:, i]
+        gcol_up  = @view G_Up[:, i]
+
+        for jt in Iterators.product(ntuple(k -> 0:e[k], p)...)
+            coeff = 1.0
+            for k in 1:p
+                coeff *= cvecs[k][jt[k] + 1]
+            end
+            key = NTuple{p,Int8}(jt)
+
+            col = get(key_to_col, key, 0)
+            if col == 0
+                ncols += 1
+                col = ncols
+                key_to_col[key] = col
+                acc_low[key] = coeff .* collect(gcol_low)
+                acc_up[key]  = coeff .* collect(gcol_up)
+            else
+                acc_low[key] .+= coeff .* gcol_low
+                acc_up[key]  .+= coeff .* gcol_up
+            end
+
+            push!(contributions[i], (col, coeff))
+        end
+    end
+
+    hnew = ncols
+    Enew     = Matrix{Int}(undef, p, hnew)
+    Gnew_Low = Matrix{T}(undef, n, hnew)
+    Gnew_Up  = Matrix{T}(undef, n, hnew)
+    for (key, col) in key_to_col
+        Enew[:, col]     .= key
+        Gnew_Low[:, col] .= acc_low[key]
+        Gnew_Up[:, col]  .= acc_up[key]
+    end
+
+    project_GL = ProjectTo(G_Low)
+    project_GU = ProjectTo(G_Up)
+
+    function map_sp_pullback(Δ)
+        Δ = unthunk(Δ)
+        # Δ is a tangent for the returned tuple (Enew, Gnew_Low, Gnew_Up)
+        dEnew, dGL_new, dGU_new = if Δ isa Tuple || Δ isa AbstractVector
+            (Δ[1], Δ[2], Δ[3])
+        else
+            # Fallback: treat as zero if unexpected
+            (NoTangent(), NoTangent(), NoTangent())
+        end
+
+        dGL_new = dGL_new isa AbstractZero ? nothing : unthunk(dGL_new)
+        dGU_new = dGU_new isa AbstractZero ? nothing : unthunk(dGU_new)
+
+        dG_Low = zeros(T, n, h)
+        dG_Up  = zeros(T, n, h)
+
+        @inbounds for i in 1:h
+            for (col, coeff) in contributions[i]
+                if dGL_new !== nothing
+                    @views dG_Low[:, i] .+= coeff .* dGL_new[:, col]
+                end
+                if dGU_new !== nothing
+                    @views dG_Up[:, i]  .+= coeff .* dGU_new[:, col]
+                end
+            end
+        end
+
+        return (NoTangent(),                 # function itself
+                NoTangent(),                 # E (integer, non-diff)
+                project_GL(dG_Low),          # G_Low
+                project_GU(dG_Up))           # G_Up
+    end
+
+    return (Enew, Gnew_Low, Gnew_Up), map_sp_pullback
+end
+
+
+
+function to_sparse_polynomial(inter::CombinedPolyBernsteinInterval)
+    @assert all(inter.orders .<= 2)
+    num_polys = size(inter.Low,1)
+    if all(inter.orders .== 1)
+        # [0,1]: x^1 
+        # [1,1]: x^0
+        exponents = 1 .- inter.bern_terms[:, 1] 
+        @show exponents
+        @assert all( x -> x ∈ [0,1] ,exponents)
+        exponents = reshape(exponents, inter.n,inter.t)
+    else # assumed to be 2
+        # [0,0,1]: x^2 
+        # [0,1/2,1]: x^1 
+        # [1,1,1]: x^0
+        exponents = 2 .-  2 .* inter.bern_terms[:, 2] 
+        @show exponents
+        @assert all( x -> x ∈ [0,1,2] ,exponents)
+        exponents = reshape(exponents, inter.n,inter.t)
+    end
+
+
+    E, G_Low, G_Up =  map_sp_to_correct_interval(exponents,inter.Low, inter.Up)
+    return PolyInterval(
+        SparsePolynomial(G_Low,E,collect(1:num_polys) ),
+        SparsePolynomial(G_Up,E,collect(1:num_polys) ))
+
+
+end
+
 """
 Creates a CombinedMultiBernsteinImp from the given multivariate polynomials.
 """
@@ -109,8 +293,7 @@ function init_combined_bernstein_interval(h::Hyperrectangle)
         @show bern_terms_matrix_idx + x_i
 	    bern_terms_matrix[bern_terms_matrix_idx + x_i , 1]= 0.
     end
-    # one constant term (1) at the end.
-    bern_terms_matrix[(n*n) + 1:(n+1)*n  , :] .=  1.0
+    # one constant term (1) at the end. (1,1,1) does not need to be modified
 
     # set coefficient vectors 
     for poly_idx in eachindex(h.radius)
@@ -244,12 +427,12 @@ function elevate_all_to(interval::CombinedPolyBernsteinInterval, new_orders::Vec
 end
 function add(inter_a::CombinedPolyBernsteinInterval, inter_b::CombinedPolyBernsteinInterval;use_memory_optimizations=true) 
     new_order = max.(inter_a.orders, inter_b.orders)
-    @assert all(new_order .<= 3)
-    elevated_a = elevate_all_to(inter_a, new_order) 
-    elevated_b = elevate_all_to(inter_b, new_order) 
-   
+
+    @assert all( <=(2) ,new_order )
+    elevated_a =  (new_order != inter_a.orders ) ? elevate_all_to(inter_a,new_order) : inter_a
+    elevated_b =  (new_order != inter_b.orders ) ? elevate_all_to(inter_b,new_order) : inter_b
     if use_memory_optimizations 
-	return combine_terms(CombinedPolyBernsteinInterval( [elevated_a.Low elevated_b.Low], [elevated_a.Up elevated_b.Up],[elevated_a.bern_terms ; elevated_b.bern_terms], elevated_a.t + elevated_b.t, elevated_a.n, new_order, elevated_a.X ))
+	    return combine_terms(CombinedPolyBernsteinInterval( [elevated_a.Low elevated_b.Low], [elevated_a.Up elevated_b.Up],[elevated_a.bern_terms ; elevated_b.bern_terms], elevated_a.t + elevated_b.t, elevated_a.n, new_order, elevated_a.X ))
     end
 	return CombinedPolyBernsteinInterval( [elevated_a.Low elevated_b.Low], [elevated_a.Up elevated_b.Up],[elevated_a.bern_terms ; elevated_b.bern_terms], elevated_a.t + elevated_b.t, elevated_a.n, new_order, elevated_a.X )
 end
@@ -541,7 +724,7 @@ function imp_fast_bounds(as::AbstractArray,bern_mat::AbstractArray,t::Int,orders
 end
 
 
-function faster_exact_bounds(as,bern_mat::AbstractArray,orders::AbstractArray,t::Int,constant_terms, term_widths, min_steps_j; threshold=5)
+function faster_exact_bounds(as,bern_mat::AbstractArray,orders::AbstractArray,t::Int,constant_terms, term_widths, min_steps_j; method=SmithBoundsOverapproximate, threshold=5)
     n = length(orders)
     S_max =   Vector{UnitRange{Int64}}(undef, n)
     S_min = Vector{UnitRange{Int64}}(undef, n)
@@ -566,13 +749,15 @@ function faster_exact_bounds(as,bern_mat::AbstractArray,orders::AbstractArray,t:
     min_possibilites = prod(length, S_min)
     @show min_possibilites
     if min_possibilites > threshold || min_possibilites < 0 # check for overflow
-	    println(" $min_possibilites is too much using shortcut")
-        b_min, b_max = imp_fast_bounds(as,bern_mat,t,orders)
+        if method == SmithBoundsOverapproximate
+            b_min, b_max = imp_fast_bounds(as,bern_mat,t,orders)
+        else 
+            b_min = -Inf
+            b_max = Inf
+        end
     elseif S_min == S_max 
-	    println("calculating 1 x $min_possibilite")
         b_min, b_max = evaluate_reduced_tensor(bern_mat,as,t,n,S_min)
     else
-	    println("calculating 2 x $min_possibilites")
         b_min,_ = evaluate_reduced_tensor(bern_mat,as,t,n,S_min)
         _, b_max = evaluate_reduced_tensor(bern_mat,as,t,n,S_max)
     end
@@ -594,11 +779,10 @@ function precompute(bern_mat, t, orders)
     term_widths = [term_width((@view bern_mat[get_term(t_idx,n),:]) ,orders) for t_idx in 1:t ]
     min_steps_j = [term_min_step_along_j((@view bern_mat[get_term(t_idx, n), :]), orders, j)
                for t_idx in 1:t, j in 1:n]
-    @assert all(min_steps_j .>= 0) "$bern_mat, $min_steps_j"
     return constant_terms,term_widths, min_steps_j
 end
 
-function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true, threshold=-1)
+function bounds(interval::CombinedPolyBernsteinInterval;  method=Overapproximate, threshold=-1)
     num_p = size(interval.Low,1)
     T = eltype(interval.Low)
     llbs = Vector{T}()
@@ -611,7 +795,7 @@ function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true, thr
     sizehint!(uubs,num_p)
 
     
-    if use_shortcut 
+    if method == Overapproximate 
 	    for p_idx in axes(interval.Low,1)
 	        low_poly = get_poly_low(p_idx,interval)
 	        up_poly = get_poly_up(p_idx,interval)
@@ -626,11 +810,11 @@ function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true, thr
 	    return llbs,lubs, ulbs, uubs
     end
 
-    t_start = @ignore_derivatives time()
-    c0d = calls_0d
-    c1d = calls_1d
-    c2d = calls_2d
-    chd = calls_higher
+    if method == SmithBoundsMonomon
+        poly_interval = to_sparse_polynomial(interval) 
+        llbs_sp , lubs_sp = bounds(poly_interval.Low)
+        ulbs_sp , uubs_sp = bounds(poly_interval.Up)
+    end
     constant_terms,term_widths , min_steps_j = @ignore_derivatives precompute(interval.bern_terms, interval.t,interval.orders)
 
     unique_as  =  Vector{Tuple{Int64,Bool}}()
@@ -663,9 +847,9 @@ function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true, thr
         println("$i")
         p_idx, is_lower = unique_as[i]
         if is_lower
-            unique_bounds[i] = faster_exact_bounds(interval.Low[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j; threshold) 
+            unique_bounds[i] = faster_exact_bounds(interval.Low[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j; method,  threshold) 
         else
-            unique_bounds[i] = faster_exact_bounds(interval.Up[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j; threshold) 
+            unique_bounds[i] = faster_exact_bounds(interval.Up[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j; method,threshold) 
         end
     end
 
@@ -675,18 +859,20 @@ function bounds(interval::CombinedPolyBernsteinInterval;  use_shortcut=true, thr
     
         llbsi , lubsi  = unique_bounds[low_evaluated_poly[p_idx]]
         ulbsi , uubsi = unique_bounds[up_evaluated_poly[p_idx]]
-        llbs =  [llbs...,llbsi]
-        lubs = [lubs...,lubsi]
-        ulbs = [ulbs...,ulbsi]
-        uubs = [uubs...,uubsi]
 
+        if method == SmithBoundsMonomon
+            llbs = [llbs..., max(llbsi, llbs_sp[p_idx])]
+            lubs = [lubs..., min(lubsi, lubs_sp[p_idx])]
+            ulbs = [ulbs..., max(ulbsi, ulbs_sp[p_idx])]
+            uubs = [uubs..., min(uubsi, uubs_sp[p_idx])]
+        else 
+            llbs = [llbs..., llbsi]
+            lubs = [lubs..., lubsi]
+            ulbs = [ulbs..., ulbsi]
+            uubs = [uubs..., uubsi]
+
+        end
     end
-    @ignore_derivatives @show time()- t_start
-    c0dn = (calls_0d) - c0d
-    c1dn = (calls_1d) - c1d
-    c2dn = (calls_2d) - c2d
-    chdn = (calls_higher) - chd
-    @show c0dn, c1dn, c2dn,chdn
     return llbs,lubs,ulbs,uubs
 
 end

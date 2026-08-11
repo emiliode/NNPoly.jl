@@ -8,7 +8,7 @@
     init_method = :CROWNQuad
     save_bounds = false
     common_generators = false
-    use_shortcut = true
+    bounds_method = Overapproximate
     use_memory_optimizations = true
 end
 
@@ -259,12 +259,13 @@ Initialize the symbolic domain corresponding to the given solver with the respec
 function initialize_symbolic_domain(
     solver::BernSym,
     net,
-    input::AbstractHyperrectangle; use_combined_repr=true, use_dense_repr=false
+    input::AbstractHyperrectangle; repr
 )
-    if use_dense_repr
+    if repr == Dense
         return init_dense_bernstein_interval(input)
-    elseif use_combined_repr
+    elseif repr == CombinedImp
 	    return init_combined_bernstein_interval(input) 
+    elseif repr == Imp
+        return init_bernstein_interval(input)
     end
-    return init_bernstein_interval(input)
 end

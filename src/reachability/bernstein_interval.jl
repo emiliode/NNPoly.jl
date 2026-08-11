@@ -536,31 +536,27 @@ function quadratic_propagation(a, b, c, multi::MultiBernsteinImp; use_memory_opt
 end
 
 function are_multiples(v1::AbstractVector, v2::AbstractVector; rtol=sqrt(eps()))
-    # 1. They must be the same dimension
     if length(v1) != length(v2)
         throw(DimensionMismatch("Vectors must have the same length"))
     end
     
     n1, n2 = norm(v1), norm(v2)
     
-    # 2. Handle zero vectors safely
-    # A zero vector is technically a scalar multiple (0) of any vector
     if n1 == 0 || n2 == 0
         return true 
     end
     
-    # 3. Use the dot product check with isapprox for floating-point safety
     return isapprox(abs(dot(v1, v2)), n1 * n2, rtol=rtol)
 end
 
-function bounds(multi::MultiBernsteinImp, X::Hyperrectangle; use_shortcut = true) 
+function bounds(multi::MultiBernsteinImp, X::Hyperrectangle; method = Overapproximate, threshold=-1) 
     lbs = similar(multi.coefficient_matrix, size(multi.t))
     ubs = similar(multi.coefficient_matrix, size(multi.t))
     
     #println("starting bounds")
     #assumes low = 0 , high = 1
     order_first_var = multi.orders[1]
-    monomon_coefficients = [ calculate_bern_coeff_for_monomial(e,order_first_var,low(X)[1],high(X)[1]) for e in 0:order_first_var ]
+    #monomon_coefficients = [ calculate_bern_coeff_for_monomial(e,order_first_var,low(X)[1],high(X)[1]) for e in 0:order_first_var ]
     #@show monomon_coefficients
 
     start = 1 
@@ -569,8 +565,8 @@ function bounds(multi::MultiBernsteinImp, X::Hyperrectangle; use_shortcut = true
     #@show nthreads()
     for p_idx in eachindex(multi.t)
 
-	if use_shortcut
-	    lbs[p_idx], ubs[p_idx] = quadrant_ibf_minmax(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders,monomon_coefficients, inv(stack(monomon_coefficients)))
+	if method == Overapproximate
+	    lbs[p_idx], ubs[p_idx] = quadrant_ibf_minmax(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders)
 	else
 	    lbs[p_idx], ubs[p_idx]= dense_min_max(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders)
 	end
@@ -585,15 +581,15 @@ end
 """
 Calculates concrete bounds for A*s + b for BernsteinPoly s with common generators.
 """
-function bounds(A::AbstractMatrix, b::AbstractVector, s::BernsteinInterval; use_shortcut=true)
+function bounds(A::AbstractMatrix, b::AbstractVector, s::BernsteinInterval; method=Overapproximate, threshold=-1)
     mapped_interval = interval_map(
         min.(0, A),
         max.(0, A),
         s,
         b,
     )
-    ll, lu = bounds(mapped_interval.Low, s.X; use_shortcut)
-    ul, uu = bounds(mapped_interval.Up, s.X; use_shortcut)
+    ll, lu = bounds(mapped_interval.Low, s.X; method)
+    ul, uu = bounds(mapped_interval.Up, s.X; method)
     return ll, uu
 end
 function approx_hash(A; atol=eps())

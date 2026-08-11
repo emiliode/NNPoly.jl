@@ -20,6 +20,19 @@ struct SparsePolynomial{
     E::EM  # exponent matrix  (default is UInt16)
     ids::VI  # vector holding variable ids
 end
+function ChainRulesCore.rrule(::Type{<:SparsePolynomial}, G, E, ids)
+    @info "SparsePolynomial rrule HIT" typeof(G) typeof(E) typeof(ids)
+    P = SparsePolynomial(G, E, ids)
+    function SparsePolynomial_pullback(Δ)
+        Δ = unthunk(Δ)
+        dG = Δ isa AbstractZero ? NoTangent() : Δ.G
+        dE = NoTangent()      # E are exponents (integers) -> non-differentiable
+        dids = NoTangent()    # ids -> non-differentiable
+        return (NoTangent(), dG, dE, dids)
+    end
+    return P, SparsePolynomial_pullback
+end
+
 
 
 function SparsePolynomial(

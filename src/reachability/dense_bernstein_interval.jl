@@ -126,10 +126,8 @@ end
 function batched_conv(A::AbstractArray, B::AbstractArray)
     poly_dims_a = size(A)[1:end-1]
     poly_dims_b = size(B)[1:end-1]
-    @show size(A), size(B)
     n_a = size(A)[end]
     n_b = size(B)[end]
-    @assert n_b == 1 || n_a == n_b "batch dim of B must be 1 (broadcast) or match A"
 
     out_dims = poly_dims_a .+ poly_dims_b .- 1
     fft_dims = ntuple(identity, length(out_dims))
@@ -148,10 +146,8 @@ function ChainRulesCore.rrule(::typeof(batched_conv), A::AbstractArray, B::Abstr
     # --- Forward Pass (Exact same logic as the original function) ---
     poly_dims_a = size(A)[1:end-1]
     poly_dims_b = size(B)[1:end-1]
-    @show size(A), size(B)
     n_a = size(A)[end]
     n_b = size(B)[end]
-    @assert n_b == 1 || n_a == n_b "batch dim of B must be 1 (broadcast) or match A"
 
     out_dims = poly_dims_a .+ poly_dims_b .- 1
     fft_dims = ntuple(identity, length(out_dims))
@@ -265,7 +261,6 @@ function multiply(dense_a::AbstractArray, dense_b::AbstractArray)
 end
 
 function square(dense::AbstractArray)
-    println("HELLO")
     orders = get_orders(dense)
     num_polys = size(dense)[end]
     res_orders = 2 .* orders 

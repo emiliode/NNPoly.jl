@@ -455,8 +455,6 @@ function forward_act_stub(
         cᵤ = get_upper_polynomial_shift(l, u, 2, L.α[:, :, 2])
     end
 
-    @show cₗ
-    @show cᵤ
     L̂, Û = quad_prop_common!(
         cₗ,
         cᵤ,

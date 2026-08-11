@@ -491,9 +491,6 @@ function optimise_bounds(
     # l and u (the bounds after the 1st linear layer) throughout the optimization loop
     ŝ, lbs, ubs = #, rs, cs, symmetric_factor, unique_idxs, duplicate_idxs =
         initialize_params_bounds(solver, net, 2, s)
-    @show ŝ 
-    @show lbs
-    @show ubs
 
     if solver.prune_neurons
         # TODO: maybe add as callback to optimisation?

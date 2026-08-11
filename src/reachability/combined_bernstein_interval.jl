@@ -290,7 +290,6 @@ function init_combined_bernstein_interval(h::Hyperrectangle)
     # one term x_i for each unfixed variable
     for x_i in 1:n 
 	    bern_terms_matrix_idx = (x_i-1)*n 
-        @show bern_terms_matrix_idx + x_i
 	    bern_terms_matrix[bern_terms_matrix_idx + x_i , 1]= 0.
     end
     # one constant term (1) at the end. (1,1,1) does not need to be modified
@@ -494,12 +493,9 @@ min diff along the j-th dimension of B_term. Requires term to be monotonically i
 """
 function term_min_step_along_j(term,orders, j)
     d = diff(term[j,1:orders[j]+1])                 
-    min_step_j = minimum(d)      
-    # must be numerical error, therefore rounding is fine!
-    if min_step_j < 0.0 
-        println("rounding $min_step_j to zero")
-        min_step_j = 0 
-    end
+    # if less than zero must be numerical error, therefore rounding is fine!
+    min_step_j = max(minimum(d),0.0)
+
     other_factor = one(eltype(term)) 
     for m  in axes(term,1)
         m == j && continue

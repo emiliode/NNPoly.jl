@@ -798,10 +798,10 @@ function bounds(interval::CombinedPolyBernsteinInterval;  method=Overapproximate
 	        llbsi , lubsi  = quadrant_ibf_minmax(low_poly,interval.t,interval.orders)#,monomon_coefficients, inv(stack(monomon_coefficients)))
 	        ulbsi, uubsi = quadrant_ibf_minmax(up_poly,interval.t,interval.orders)#,monomon_coefficients, inv(stack(monomon_coefficients)))
 
-	        llbs[p_idx] = llbsi  
-	        lubs[p_idx] = lubsi  
-	        ulbs[p_idx] = ulbsi  
-	        uubs[p_idx] = uubsi  
+		llbs = [llbs..., llbsi]
+		lubs = [lubs..., lubsi]
+		ulbs = [ulbs..., ulbsi]
+		uubs = [uubs..., uubsi]
 	    end
 	    return llbs,lubs, ulbs, uubs
     end
@@ -876,14 +876,14 @@ end
 """
 Calculates concrete bounds for A*s + b for BernsteinPoly s with common generators.
 """
-function bounds(A::AbstractMatrix, b::AbstractVector, s::CombinedPolyBernsteinInterval; use_shortcut=true, threshold=-1)
+function bounds(A::AbstractMatrix, b::AbstractVector, s::CombinedPolyBernsteinInterval; method=Overapproximate, threshold=-1)
     mapped_interval = interval_map(
         min.(0, A),
         max.(0, A),
         s,
         b,
     )
-    ll, _ ,_, uu = bounds(mapped_interval; use_shortcut , threshold)
+    ll, _ ,_, uu = bounds(mapped_interval; method , threshold)
     return ll, uu
 end
 

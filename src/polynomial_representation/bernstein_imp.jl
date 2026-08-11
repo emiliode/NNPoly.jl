@@ -406,6 +406,63 @@ function add(
     )
 end
 
+"""
+Calculate bounds by evalueting the terms at (0,0,...) and (1,1,...) and unpacking them first
+"""
+function quadrant_ibf_minmax(coefficient_matrix::TN, t::M, orders::Vector{Int64}, monomon_coeffs,inverse ) where { M<:Number,O<:Number,TN<:AbstractArray{O}}
+
+    
+
+    nvars = length(orders)
+    minval = zero(O)
+    maxval = zero(O)
+
+    for term in 0:(t-1)
+
+
+        left_prod  = one(O)
+        right_prod = one(O)
+	    # first var has  to first be splitted because we combine ax* bx^2  + cx * bx^2 too (a+c)x + bx^2
+	     
+
+	for var in 2:nvars
+	    coeffs = @view coefficient_matrix[term*nvars  + var, :]
+
+	    first_idx = 1  #findfirst(!iszero, coeffs)
+	    last_idx  = orders[var] +1  #findlast(!iszero, coeffs)
+
+	    left_prod *= coeffs[first_idx]
+	    right_prod *= coeffs[last_idx]
+	end
+	first_row = @view coefficient_matrix[term*nvars + 1,1:orders[1]+1] 
+
+	if any([are_multiples(first_row , monomon_coefficient) for monomon_coefficient in monomon_coeffs])
+	    left_prod *= first_row[1]
+	    right_prod *= first_row[orders[1]+1]
+	    minval += min(left_prod, right_prod)
+	    maxval += max(left_prod, right_prod)
+	else 
+	    #@show first_row
+	    #throw("SHOULD NOT HAPPEN")
+	    original_coeffs = inverse * first_row
+	    if all(original_coeffs .== 0 ) 
+		continue 
+	    end
+	    for row in  monomon_coeffs .* original_coeffs
+		first_idx = 1  
+	    	last_idx  = orders[1] +1  
+
+	    	left_prod_with_first_row = left_prod * row[first_idx]
+	    	right_prod_with_first_row = right_prod * row[last_idx]
+		minval += min(left_prod_with_first_row, right_prod_with_first_row)
+		maxval += max(left_prod_with_first_row, right_prod_with_first_row)
+	    end
+
+	end
+
+    end
+    return minval, maxval
+end
 
 """
 Calculate bounds by evalueting the terms at (0,0,...) and (1,1,...)

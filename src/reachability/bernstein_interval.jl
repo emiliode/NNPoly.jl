@@ -41,11 +41,12 @@ function build_multi(bern_polys::Vector{<:BernsteinPolynomialImp})
 end
 
 """
-Construct a bernstein Polynomial repr of x_i over the input domain X 
+Construct a bernstein Polynomial repr of x_i over the input domain X  normalized to 0-1
 """
 function init_one_coeff_mat(poly_idx,num_poly_vars, input_idx, X::Hyperrectangle)
-    coeff_mat = fill(1.0, num_poly_vars, 2)
-    coeff_mat[poly_idx, :] = [low(X)[input_idx], high(X)[input_idx]]
+    coeff_mat = fill(1.0, 2*num_poly_vars, 2) # two term 1. (u-l)*x 2. l
+    coeff_mat[poly_idx, :] = [0, 2*X.radius[input_idx]]
+    coeff_mat[num_poly_vars+1, :] = [low(X)[input_idx], low(X)[input_idx]]
     return coeff_mat
 end
 
@@ -60,23 +61,24 @@ function init_bernstein_interval(h::Hyperrectangle)
     n = count(unfixed_mask)
     #@show unfixed_mask,n
     @polyvar x[1:num_polys]
-    coeff_matrices = similar(h.radius, n*num_polys ,2  )
+    coeff_matrices = similar(h.radius, 2*n*num_polys ,2  )
     
     for i in 1:num_polys
-	    coeff_idx = (i-1)*n +1
+	    coeff_idx = 2*(i-1)*n +1
 	    if unfixed_mask[i]
-	        coeff_matrices[coeff_idx:coeff_idx + n - 1, :]  = init_one_coeff_mat(count(@view unfixed_mask[1:i]),n,i,h)
+	        coeff_matrices[coeff_idx:coeff_idx + 2*n - 1, :]  = init_one_coeff_mat(count(@view unfixed_mask[1:i]),n,i,h)
 	    else 
 	        # constant value
-	        coeff_mat = fill(1.0, n, 2)
+	        coeff_mat = fill(1.0, 2*n, 2)
 	        coeff_mat[1,:] .= low(h)[i]
-	        coeff_matrices[coeff_idx:coeff_idx + n - 1, :] = coeff_mat
+	        coeff_mat[n+1,:] .= 0 
+	        coeff_matrices[coeff_idx:coeff_idx + 2*n - 1, :] = coeff_mat
 	    end
     end
-    X = Hyperrectangle(h.center[unfixed_mask], h.radius[unfixed_mask])
+X = Hyperrectangle(fill(0.5,n), fill(0.5,n))
     return BernsteinInterval(
-        MultiBernsteinImp(coeff_matrices, fill(1, num_polys), fill(1, n)),
-        MultiBernsteinImp(copy(coeff_matrices), fill(1, num_polys), fill(1, n)),
+        MultiBernsteinImp(coeff_matrices, fill(2, num_polys), fill(1, n)),
+        MultiBernsteinImp(copy(coeff_matrices), fill(2, num_polys), fill(1, n)),
         num_polys,
         X,
     )
@@ -556,7 +558,8 @@ function bounds(multi::MultiBernsteinImp, X::Hyperrectangle; method = Overapprox
     #println("starting bounds")
     #assumes low = 0 , high = 1
     order_first_var = multi.orders[1]
-    #monomon_coefficients = [ calculate_bern_coeff_for_monomial(e,order_first_var,low(X)[1],high(X)[1]) for e in 0:order_first_var ]
+    monomon_coefficients = [ calculate_bern_coeff_for_monomial(e,order_first_var,low(X)[1],high(X)[1]) for e in 0:order_first_var ]
+    inverse = inv(stack(monomon_coefficients))
     #@show monomon_coefficients
 
     start = 1 
@@ -566,9 +569,9 @@ function bounds(multi::MultiBernsteinImp, X::Hyperrectangle; method = Overapprox
     for p_idx in eachindex(multi.t)
 
 	if method == Overapproximate
-	    lbs[p_idx], ubs[p_idx] = quadrant_ibf_minmax(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders)
+	    lbs[p_idx], ubs[p_idx] = quadrant_ibf_minmax(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders,monomon_coefficients,inverse)
 	else
-	    lbs[p_idx], ubs[p_idx]= dense_min_max(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders)
+	    lbs[p_idx], ubs[p_idx]= dense_min_max(multi.coefficient_matrix[start : start + (n * multi.t[p_idx])  - 1 , :  ],multi.t[p_idx],multi.orders,monomon_coefficients,inverse)
 	end
         start += (n*multi.t[p_idx])
     end
@@ -590,6 +593,7 @@ function bounds(A::AbstractMatrix, b::AbstractVector, s::BernsteinInterval; meth
     )
     ll, lu = bounds(mapped_interval.Low, s.X; method)
     ul, uu = bounds(mapped_interval.Up, s.X; method)
+    @show ll, lu , ul, uu
     return ll, uu
 end
 function approx_hash(A; atol=eps())
@@ -623,7 +627,7 @@ function combine_terms(coefficient_matrix::TN, n::Int;atol=1e-12 )where {N<:Numb
         for rep_start in get(groups, h, Int[])
 
             rep_tail = @view coefficient_matrix[rep_start+1:rep_start+n-1, :]
-	    if isapprox(tail ,rep_tail;atol) #&&  are_multiples(coefficient_matrix[rep_start,:],coefficient_matrix[row_start,:]) 
+	    if isapprox(tail ,rep_tail;atol) &&  are_multiples(coefficient_matrix[rep_start,:],coefficient_matrix[row_start,:]) 
                 @views coefficient_matrix[rep_start, :] .+= coefficient_matrix[row_start, :]
                 found = true
                 break

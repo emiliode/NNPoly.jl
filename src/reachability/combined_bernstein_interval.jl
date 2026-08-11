@@ -795,6 +795,8 @@ function bounds(interval::CombinedPolyBernsteinInterval;  method=Overapproximate
 	    for p_idx in axes(interval.Low,1)
 	        low_poly = get_poly_low(p_idx,interval)
 	        up_poly = get_poly_up(p_idx,interval)
+		@show low_poly
+		@show up_poly
 	        llbsi , lubsi  = quadrant_ibf_minmax(low_poly,interval.t,interval.orders)#,monomon_coefficients, inv(stack(monomon_coefficients)))
 	        ulbsi, uubsi = quadrant_ibf_minmax(up_poly,interval.t,interval.orders)#,monomon_coefficients, inv(stack(monomon_coefficients)))
 
@@ -883,7 +885,7 @@ function bounds(A::AbstractMatrix, b::AbstractVector, s::CombinedPolyBernsteinIn
         s,
         b,
     )
-    ll, _ ,_, uu = bounds(mapped_interval; method , threshold)
+    ll, lu ,ul, uu = bounds(mapped_interval; method , threshold)
     return ll, uu
 end
 
@@ -899,13 +901,14 @@ function combine_terms(inter::CombinedPolyBernsteinInterval)
    Up =  zeros(eltype(inter.Up), size(inter.Up,1), 0)   # num_polys×0 matrix
    for old_term_idx in 1:inter.t 
 	term = inter.bern_terms[ get_term(old_term_idx,inter.n), : ]
-	t_idx = findfirst(x -> x == term,unique_terms)
+	t_idx = findfirst(x -> isapprox(x , term; atol=1e-14),unique_terms)
 	if isnothing(t_idx)
 	    unique_terms = [unique_terms...,copy(term)]
 	    Low = [Low zeros(eltype(Low),size(Low,1))]
 	    Up = [Up zeros(eltype(Up),size(Up,1))]
 	    t_idx = length(unique_terms)
 	end
+	println("mapping $old_term_idx to  $t_idx ")
 	#Low[:,t_idx] .+=  inter.Low[:, old_term_idx]
 	Low = hcat(Low[:,1:t_idx-1], 
 		    Low[:,t_idx] .+ inter.Low[:,old_term_idx],

@@ -901,7 +901,6 @@ function combine_terms(inter::CombinedPolyBernsteinInterval)
 	    Up = [Up zeros(eltype(Up),size(Up,1))]
 	    t_idx = length(unique_terms)
 	end
-	println("mapping $old_term_idx to  $t_idx ")
 	#Low[:,t_idx] .+=  inter.Low[:, old_term_idx]
 	Low = hcat(Low[:,1:t_idx-1], 
 		    Low[:,t_idx] .+ inter.Low[:,old_term_idx],

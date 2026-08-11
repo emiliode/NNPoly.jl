@@ -21,7 +21,6 @@ struct SparsePolynomial{
     ids::VI  # vector holding variable ids
 end
 function ChainRulesCore.rrule(::Type{<:SparsePolynomial}, G, E, ids)
-    @info "SparsePolynomial rrule HIT" typeof(G) typeof(E) typeof(ids)
     P = SparsePolynomial(G, E, ids)
     function SparsePolynomial_pullback(Δ)
         Δ = unthunk(Δ)

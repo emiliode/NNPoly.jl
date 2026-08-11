@@ -538,10 +538,10 @@ function optimise_bounds(
             return loss_fun(ll, uu)
         end
 
-    t_start = time()
-    loss =  optfun(net) #res  =optimise(optfun, net, opt, params = params)
-    res  = (t_hist= [time() - t_start], y_hist=[loss])
-    #res  =optimise(optfun, net, opt, params = params)
+    #t_start = time()
+    #loss =  optfun(net) #res  =optimise(optfun, net, opt, params = params)
+    #res  = (t_hist= [time() - t_start], y_hist=[loss])
+    res  =optimise(optfun, net, opt, params = params)
     print_results && println("lbs = ", lbs[end])
     print_results && println("ubs = ", ubs[end])
 

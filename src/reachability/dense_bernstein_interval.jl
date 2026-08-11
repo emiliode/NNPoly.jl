@@ -380,7 +380,7 @@ function interval_map(W⁻, W⁺, I::DenseBernsteinInterval, b; use_memory_optim
     return translate(DenseBernsteinInterval(new_low,new_up, I.X, I.lbs,I.ubs),b)
 end
 
-function bounds(inter::DenseBernsteinInterval; use_shortcut, threshold)
+function bounds(inter::DenseBernsteinInterval; method, threshold)
     dims = ntuple(identity,ndims(inter.Low)-1)
     last_dim = size(inter.Low)[end]
 
@@ -390,14 +390,14 @@ function bounds(inter::DenseBernsteinInterval; use_shortcut, threshold)
     uubs = reshape(maximum(inter.Up; dims),last_dim)
     return llbs, lubs, ulbs, uubs
 end
-function outer_bounds(inter::DenseBernsteinInterval; use_shortcut, threshold)
+function outer_bounds(inter::DenseBernsteinInterval; method, threshold)
     dims = ntuple(identity,ndims(inter.Low)-1)
     last_dim = size(inter.Low)[end]
     llbs = reshape(minimum(inter.Low; dims),last_dim)
     uubs = reshape(maximum(inter.Up; dims),last_dim)
     return llbs,  uubs
 end
-function bounds(tensor::AbstractArray; use_shortcut, threshold) 
+function bounds(tensor::AbstractArray; method, threshold) 
     dims = ntuple(identity,ndims(tensor)-1)
     last_dim = size(tensor)[end]
     ext = extrema(tensor;dims)
@@ -410,12 +410,12 @@ end
 """
 Calculates concrete bounds for A*s + b for BernsteinPoly s with common generators.
 """
-function bounds(A::AbstractMatrix, b::AbstractVector, s::DenseBernsteinInterval; use_shortcut=true, threshold=-1)
+function bounds(A::AbstractMatrix, b::AbstractVector, s::DenseBernsteinInterval; method=Overapproximating, threshold=-1)
     mapped_interval = interval_map(
         min.(0, A),
         max.(0, A),
         s,
         b,
     )
-    return outer_bounds(mapped_interval; use_shortcut,threshold)
+    return outer_bounds(mapped_interval;method,threshold)
 end

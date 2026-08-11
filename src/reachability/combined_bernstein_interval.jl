@@ -831,11 +831,9 @@ function bounds(interval::CombinedPolyBernsteinInterval;  method=Overapproximate
         end
     end
 
-    println("saved: $(2*size(interval.Low,1) - size(unique_as,1) )")
 
     unique_bounds = Zygote.Buffer(Array{Tuple{Float64,Float64}}(undef,1),size(unique_as,1))
     for i in eachindex(unique_as)
-        println("$i")
         p_idx, is_lower = unique_as[i]
         if is_lower
             unique_bounds[i] = faster_exact_bounds(interval.Low[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j; method,  threshold) 

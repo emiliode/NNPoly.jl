@@ -180,16 +180,12 @@ function to_sparse_polynomial(inter::CombinedPolyBernsteinInterval)
         # [0,1]: x^1 
         # [1,1]: x^0
         exponents = 1 .- inter.bern_terms[:, 1] 
-        @show exponents
-        @assert all( x -> x ∈ [0,1] ,exponents)
         exponents = reshape(exponents, inter.n,inter.t)
     else # assumed to be 2
         # [0,0,1]: x^2 
         # [0,1/2,1]: x^1 
         # [1,1,1]: x^0
         exponents = 2 .-  2 .* inter.bern_terms[:, 2] 
-        @show exponents
-        @assert all( x -> x ∈ [0,1,2] ,exponents)
         exponents = reshape(exponents, inter.n,inter.t)
     end
 
@@ -743,7 +739,6 @@ function faster_exact_bounds(as,bern_mat::AbstractArray,orders::AbstractArray,t:
 	    S_min[x_i],S_max[x_i] = bound_algo(as,orders,t,x_i,constant_terms,term_widths, non_constant_alphas, inc_mask, dec_mask ,width_dec_full ,width_inc_full, all_diff_dec, all_diff_inc)
     end
     min_possibilites = prod(length, S_min)
-    @show min_possibilites
     if min_possibilites > threshold || min_possibilites < 0 # check for overflow
         if method == SmithBoundsOverapproximate
             b_min, b_max = imp_fast_bounds(as,bern_mat,t,orders)
@@ -795,8 +790,6 @@ function bounds(interval::CombinedPolyBernsteinInterval;  method=Overapproximate
 	    for p_idx in axes(interval.Low,1)
 	        low_poly = get_poly_low(p_idx,interval)
 	        up_poly = get_poly_up(p_idx,interval)
-		@show low_poly
-		@show up_poly
 	        llbsi , lubsi  = quadrant_ibf_minmax(low_poly,interval.t,interval.orders)#,monomon_coefficients, inv(stack(monomon_coefficients)))
 	        ulbsi, uubsi = quadrant_ibf_minmax(up_poly,interval.t,interval.orders)#,monomon_coefficients, inv(stack(monomon_coefficients)))
 

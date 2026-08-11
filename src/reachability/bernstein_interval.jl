@@ -591,9 +591,8 @@ function bounds(A::AbstractMatrix, b::AbstractVector, s::BernsteinInterval; meth
         s,
         b,
     )
-    ll, lu = bounds(mapped_interval.Low, s.X; method)
-    ul, uu = bounds(mapped_interval.Up, s.X; method)
-    @show ll, lu , ul, uu
+    ll, _ = bounds(mapped_interval.Low, s.X; method)
+    _, uu = bounds(mapped_interval.Up, s.X; method)
     return ll, uu
 end
 function approx_hash(A; atol=eps())

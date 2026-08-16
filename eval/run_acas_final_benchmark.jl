@@ -84,7 +84,6 @@ properties, times, y_starts, ys, y_hists, t_hists = verify_vnnlib(
     timeout = 300,
     loss_fun = bounds_loss,
 )
-exit()
 println("running experiments")
 
 #pcrown = PolyCROWNBern(use_memory_optimizations=true, bounds_method=Overapproximate, interval_repr=Imp , poly_layers = 1,threshold=THRESHOLD)
@@ -147,7 +146,7 @@ println("running experiments")
 #    timeout = 300,
 #    loss_fun = bounds_loss,
 #)
-STEPS = Inf
+STEPS = typemax(Int)
 THRESHOLD = 250
 pcrown = PolyCROWNBern(use_memory_optimizations=true, bounds_method=Overapproximate,interval_repr=CombinedImp , poly_layers = 1, threshold=THRESHOLD)
 properties, times, y_starts, ys, y_hists, t_hists = verify_vnnlib(

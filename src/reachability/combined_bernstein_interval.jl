@@ -507,7 +507,7 @@ term_width(term,orders) = ((lo,hi) = term_extrema(term, orders); hi - lo)
 function bound_algo(as,orders::Vector{Int},t::Int,j::Int,constant_terms,term_widths,non_constant_mask, inc_mask, dec_mask, width_dec_full, width_inc_full , all_diff_dec, all_diff_inc )
     l_j = orders[j]+1
 
-    non_constant_mask = non_constant_mask .||  .!(constant_terms[:,j])
+    non_constant_mask = non_constant_mask .&&  .!(constant_terms[:,j])
     constant_mask = .!non_constant_mask
 
     # exactly one term is non-constant with respect to x_j
@@ -518,17 +518,15 @@ function bound_algo(as,orders::Vector{Int},t::Int,j::Int,constant_terms,term_wid
     # more than one non constant term therfore continue with monotonicity_test
     #increasing_mask = as[non_constant_mask] .>= 0
 
-    inc_mask = inc_mask .&& non_constant_mask
-    dec_mask = dec_mask .&& non_constant_mask
 
-    if all(!,inc_mask)
+    if all(!,inc_mask .&& non_constant_mask)
         return l_j:l_j, 1:1
     end
-    if all(!,dec_mask)
+    if all(!,dec_mask .&& non_constant_mask)
         return 1:1, l_j:l_j
     end
     
-    width_dec = width_dec_full -  sum( term_widths[constant_mask] .* abs.(as[constant_mask]) )
+    width_dec = width_dec_full -  sum( term_widths[dec_mask .&& constant_mask] .* abs.(as[dec_mask .&& constant_mask]) )
     #diff_inc = sum(min_steps_j[increasing_mask,j] .* abs.(as[increasing_mask])  )
     diff_inc = all_diff_inc[j]
     

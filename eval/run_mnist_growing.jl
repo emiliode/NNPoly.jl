@@ -1,19 +1,20 @@
 using NNPoly, JLD2, MKL, Dates
-import NNPoly: PolyCROWN,PolyCROWNBern, verify_vnnlib
+import NNPoly:   SmithBoundsMonomon,Overapproximate,  CombinedImp, Dense, DiffNNPolySym, AlphaNeurify, aCROWN, PolyCROWN, verify_vnnlib, PolyCROWNBern, bounds_loss_violation_stop, violation_loss, bounds_loss
 const NP = NNPoly
 
 MNIST_PATH = "./eval/mnist_fc_growing"
+TIMEOUT  = 1800
 
 println("precompiling ...")
 #solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
-solver = PolyCROWNBern(use_combined_repr=true, use_dense_repr=false, poly_layers=1, use_shortcut=false)
+solver = PolyCROWNBern(bounds_method=Overapproximate, interval_repr=CombinedImp, poly_layers=1,  threshold=500000)
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     "./eval/mnist_fc",
     logfile = "./eval/mnist_results_PolyCROWNBern_growing.jld2",
     max_properties = 2,
     print_freq = 1,
-    n_steps = 10,
+    n_steps = 1,
     save_history = true,
     timeout = 3600,
     force_gc = true,
@@ -49,19 +50,23 @@ println("running experiments ...")
 open(logfile, "w") do f
     println(f, "network,property,n_unfixed,result,time,steps,hist_file")
 end
+net_prop_reachedtimeout = fill(false,length(model_paths)*length(properties))
 
-for model_path in model_paths
-    net = NP.onnx2CROWNNetwork(
-        model_path,
-        dtype = Float64,
-        degree = 1,
-        first_layer_degree = 2,
-	poly_layer=1,
-    )
+for n_un in n_unfixed
 
-    for prop in properties
-        steps_unknown = 0
-        for n_un in n_unfixed
+    for (model_i,model_path) in enumerate(model_paths)
+	net = NP.onnx2CROWNNetwork(
+    	    model_path,
+    	    dtype = Float64,
+    	    degree = 1,
+    	    first_layer_degree = 2,
+    	    poly_layer=1,
+    	)
+	for prop in properties
+	    # if the last prop took over TIMEOUT seconds skip it. 
+	    if (net_prop_reachedtimeout[(model_i -1)*length(properties) + prop + 1  ]) 
+		continue
+	    end
             model_name = split(model_path, "/")[end]
             println("--- net: ", model_name, " ---")
             println("\tprop: ", prop)
@@ -120,11 +125,8 @@ for model_path in model_paths
                 )
             end
 
-            if verified == "unknown"
-                #steps_unknown += 1
-                if steps_unknown >= patience
-                    break
-                end
+            if t >= TIMEOUT 
+		net_prop_reachedtimeout[(model_i -1)*length(properties) + prop + 1  ] = true
             end
         end
     end

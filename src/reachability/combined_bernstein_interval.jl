@@ -783,28 +783,11 @@ function bounds(interval::CombinedPolyBernsteinInterval;  method=Overapproximate
     sizehint!(ulbs,num_p)
     sizehint!(uubs,num_p)
 
-    
-    if method == Overapproximate 
-	    for p_idx in axes(interval.Low,1)
-	        low_poly = get_poly_low(p_idx,interval)
-	        up_poly = get_poly_up(p_idx,interval)
-	        llbsi , lubsi  = quadrant_ibf_minmax(low_poly,interval.t,interval.orders)#,monomon_coefficients, inv(stack(monomon_coefficients)))
-	        ulbsi, uubsi = quadrant_ibf_minmax(up_poly,interval.t,interval.orders)#,monomon_coefficients, inv(stack(monomon_coefficients)))
-
-		llbs = [llbs..., llbsi]
-		lubs = [lubs..., lubsi]
-		ulbs = [ulbs..., ulbsi]
-		uubs = [uubs..., uubsi]
-	    end
-	    return llbs,lubs, ulbs, uubs
-    end
-
     if method == SmithBoundsMonomon
         poly_interval = to_sparse_polynomial(interval) 
         llbs_sp , lubs_sp = bounds(poly_interval.Low)
         ulbs_sp , uubs_sp = bounds(poly_interval.Up)
     end
-    constant_terms,term_widths , min_steps_j = @ignore_derivatives precompute(interval.bern_terms, interval.t,interval.orders)
 
     unique_as  =  Vector{Tuple{Int64,Bool}}()
     low_evaluated_poly = Array{Int64}(undef,size(interval.Low,1))
@@ -829,14 +812,24 @@ function bounds(interval::CombinedPolyBernsteinInterval;  method=Overapproximate
         end
     end
 
-
+    if method != Overapproximate 
+	constant_terms,term_widths , min_steps_j = @ignore_derivatives precompute(interval.bern_terms, interval.t,interval.orders)
+    end
     unique_bounds = Zygote.Buffer(Array{Tuple{Float64,Float64}}(undef,1),size(unique_as,1))
     for i in eachindex(unique_as)
         p_idx, is_lower = unique_as[i]
         if is_lower
-            unique_bounds[i] = faster_exact_bounds(interval.Low[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j; method,  threshold) 
+	    if method == Overapproximate
+		unique_bounds[i] = imp_fast_bounds(interval.Low[p_idx,:],interval.bern_terms,interval.t,interval.orders)
+	    else
+		unique_bounds[i] = faster_exact_bounds(interval.Low[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j; method,  threshold) 
+	    end
         else
-            unique_bounds[i] = faster_exact_bounds(interval.Up[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j; method,threshold) 
+	    if method == Overapproximate
+		unique_bounds[i] = imp_fast_bounds(interval.Up[p_idx,:],interval.bern_terms,interval.t,interval.orders)
+	    else
+		unique_bounds[i] = faster_exact_bounds(interval.Up[p_idx,:] ,interval.bern_terms,interval.orders,interval.t,constant_terms,term_widths,min_steps_j; method,threshold) 
+	    end
         end
     end
 

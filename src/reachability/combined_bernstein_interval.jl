@@ -526,7 +526,7 @@ function bound_algo(as,orders::Vector{Int},t::Int,j::Int,constant_terms,term_wid
         return 1:1, l_j:l_j
     end
     
-    width_dec = width_dec_full -  sum( term_widths[dec_mask .&& constant_mask] .* abs.(as[dec_mask .&& constant_mask]) )
+    width_dec = width_dec_full -  sum( term_widths[dec_mask .& constant_terms[:,j]] .* abs.(as[dec_mask .& constant_terms[:,j]]) )
     #diff_inc = sum(min_steps_j[increasing_mask,j] .* abs.(as[increasing_mask])  )
     diff_inc = all_diff_inc[j]
     
@@ -537,7 +537,7 @@ function bound_algo(as,orders::Vector{Int},t::Int,j::Int,constant_terms,term_wid
     end
     
 
-    width_inc = width_inc_full -  sum( term_widths[constant_mask] .* abs.(as[constant_mask]) )
+    width_inc = width_inc_full -  sum( term_widths[constant_terms[:,j] .& inc_mask ] .* abs.(as[constant_terms[:,j] .& inc_mask ]) )
     #diff_dec = sum(min_steps_j[decreasing_mask,j] .* abs.(as[decreasing_mask])  )
     diff_dec = all_diff_dec[j]
     @assert diff_dec >= 0  "$diff_dec , $(as[decreasing_mask]) "

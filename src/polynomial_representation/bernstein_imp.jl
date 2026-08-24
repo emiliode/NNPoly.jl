@@ -192,10 +192,10 @@ function binomial_tensor_dense_cached(L::Vector{Int64})
 end
 Zygote.@non_differentiable binomial_tensor_dense_cached(L::Vector{Int64})
 
-const _binomial_tensor_cache = Dict{Vector{Int64}, Array{Float64}}()
-function binomial_tensor_cached(L::Vector{Int64})
-    return get!(_binomial_tensor_cache,L) do 
-	    return binomial_tensor(L)
+const _binomial_tensor_cache = Dict{Int64, Array{Float64}}()
+function binomial_tensor_cached(l::Int64 )
+    return get!(_binomial_tensor_cache,l) do 
+	    return binomial_tensor(l)
     end
 end
 Zygote.@non_differentiable binomial_tensor_cached(L::Vector{Int64})
@@ -224,27 +224,20 @@ end
 """
 calculate : 
     [(l1 choose 0) , ... , (l1 choose l1)]
-    ... 
-    [(ln choose 0) , ... , (ln choose ln)] padded with zeros
 """
- function binomial_tensor(L::Vector{Int64})
-    ranges = [collect(0:i) for i in L]
+ function binomial_tensor(l::Int64)
+    range = reshape(collect(0:l) ,1,:)
 
-    N = reshape(L, :, 1)
+    N = reshape([l], 1, :)
 
     # maximum sequence length
-    maxlen = maximum(length.(ranges))
+    maxlen = length(range)
 
     # pad with -1
-    R = fill(-1, length(ranges), maxlen)
-
-    for (i, r) in enumerate(ranges)
-        R[i, 1:length(r)] = r
-    end
 
     A = loggamma.(N .+ 1)
-    B = loggamma.(N .- R .+ 1)
-    C = loggamma.(R .+ 1)
+    B = loggamma.(N .- range .+ 1) 
+    C = loggamma.(range .+ 1)
     return exp.(A .- B .- C)
 end
 Zygote.@non_differentiable binomial_tensor(L::Vector{Int64})

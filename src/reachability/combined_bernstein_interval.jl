@@ -95,6 +95,7 @@ function map_sp_to_correct_interval(E::AbstractArray{Int8}, G_Low::TN, G_Up::TN)
                 v_low .+= coeff .* gcol_low
                 v_up .+= coeff .* gcol_up
             end
+	    # grow idx "digit by digit" 
             k = 1
             while k <= p
                 if idx[k] < e[k]
@@ -623,10 +624,11 @@ function bound_algo(as, order::Int8, t::Int, j::Int, constant_terms, term_widths
     end
 
     width_dec = width_dec_full - sum(term_widths[dec_mask .& constant_terms[:, j]] .* abs.(as[dec_mask .& constant_terms[:, j]]))
+    #@assert width_dec == width_dec_full "$width_dec != $width_dec_full"
     #diff_inc = sum(min_steps_j[increasing_mask,j] .* abs.(as[increasing_mask])  )
     diff_inc = all_diff_inc[j]
 
-    @assert diff_inc >= 0 "$diff_inc , $(as[increasing_indices]),"
+    @assert diff_inc >= 0 "$diff_inc , $(all_diff_inc),"
 
     if diff_inc > width_dec
         return 1:1, l_j:l_j
@@ -636,7 +638,7 @@ function bound_algo(as, order::Int8, t::Int, j::Int, constant_terms, term_widths
     width_inc = width_inc_full - sum(term_widths[constant_terms[:, j] .& inc_mask] .* abs.(as[constant_terms[:, j] .& inc_mask]))
     #diff_dec = sum(min_steps_j[decreasing_mask,j] .* abs.(as[decreasing_mask])  )
     diff_dec = all_diff_dec[j]
-    @assert diff_dec >= 0 "$diff_dec , $(as[decreasing_mask]) "
+    @assert diff_dec >= 0 "$diff_dec , $(as[dec_mask]) "
     if diff_dec > width_inc
         return l_j:l_j, 1:1
     end
@@ -660,25 +662,21 @@ caller should treat as an all-zero M).
 """
 function build_M(coeffs::BitMatrix, twoExps::Matrix{Int8}, t::Int, n::Int, S, nonscalar, scalar_dims, dims::NTuple{K,Int}) where {K}
     total = prod(dims)
-    CMat = falses( t, total)
-    EMat = Matrix{Int8}(undef,t,total)
+    #Mfloat = Matrix{Float64}(undef,t,total)
+    Mfloat = zeros(t,total)
 
     # scratch buffers reused across t_idx to avoid per-term allocation
-    exp_buf = Vector{Int8}(undef, total)
-    mask_buf = Vector{Bool}(undef, total)
-
     for t_idx in 1:t
         rows = get_term(t_idx, n)
 
-        scalar_exp = 0
         scalar_zero = false
+	# scalar dimensions are always 1 or l , therfore they are 0 or 2^0 
         @inbounds for m in scalar_dims
             r, c = rows[m], first(S[m])
             if !coeffs[r, c]
                 scalar_zero = true
                 break
             end
-            scalar_exp += twoExps[r, c]
         end
         if scalar_zero
             # whole row of M stays zero
@@ -708,17 +706,13 @@ function build_M(coeffs::BitMatrix, twoExps::Matrix{Int8}, t::Int, n::Int, S, no
             reshape(sub, shape...)
         end
 
-        exp_ten = .+(exp_factors...)               # dims-shaped, values are per-element exponent (excluding scalar_exp)
-        mask_ten = .&(coeffs_factors...)            # dims-shaped Bool mask
+	
+        Mfloat_row = reshape(@view(Mfloat[t_idx, :]), dims)
+	Mfloat_row .= (.&(coeffs_factors...)) .*  ldexp.(1.0, .+(exp_factors...))
 
-        # flatten into M's row: M[t_idx, idx] = mask ? 2^(scalar_exp + exp_ten) : 0
-        @inbounds for (idx, (mval, eval)) in enumerate(zip(mask_ten, exp_ten))
-            CMat[t_idx, idx] = mval 
-            EMat[t_idx, idx] = eval 
-        end
     end
 
-    return CMat, EMat 
+    return Mfloat 
 end
 const M_CACHE = Dict{Any, Matrix{Float64}}()   # keyed on (objectid(coeffs), S) or similar — see note below
 
@@ -741,6 +735,27 @@ function evaluate_reduced_tensor_cached(coeffs::BitMatrix, twoExps::Matrix{Int8}
 
     out_flat = M' * as              # gemv: (prod(dims) × t) * (t) -> prod(dims)
     return extrema(out_flat)
+end
+function eval_scalar(coeffs::BitMatrix, twoExps::Matrix{Int8}, as::Vector{TA}, t, n,S ) where {TA}
+    s = zero(TA)
+    for t_idx in 1:t
+        a = as[t_idx]
+        iszero(a) && continue
+        rows = get_term(t_idx, n)
+        exp_acc = 0
+        zero_hit = false
+        @inbounds for m in 1:n
+            r,c = rows[m], first(S[m])
+            if !coeffs[r,c]
+                zero_hit = true 
+                break 
+            end
+            exp_acc += twoExps[r,c]
+        end
+        zero_hit && continue
+        s += ldexp(a,exp_acc)
+    end
+    return s
 end
 function _eval_broadcast(coeffs::BitMatrix, twoExps::Matrix{Int8}, as::Vector{TA}, t, n, S, nonscalar, dims::NTuple{K,Int}) where {K,TA}
     if K == 0
@@ -1064,7 +1079,7 @@ end
 """
 returns indices of the maximum sets, owned with owned[i] = indices of all contained in Ss[i]
 """
-function partition_maximal(Ss::Vector{Vector{UnitRange}})
+function partition_maximal(Ss::Vector{Vector{UnitRange{Int64}}})
     m = length(Ss)
     is_dominated = falses(m)
     for i in 1:m
@@ -1090,6 +1105,70 @@ function partition_maximal(Ss::Vector{Vector{UnitRange}})
     return maximal_idx, owned
 end
 
+function merge_S(a::Vector{UnitRange{Int}}, b::Vector{UnitRange{Int}})
+    return [min(first(a[j]), first(b[j])):max(last(a[j]), last(b[j])) for j in eachindex(a)]
+end
+function partition_maximal_merged_fast(Ss::Vector{Vector{UnitRange{Int}}}; threshold::Int)
+    maximal_idx, owned = partition_maximal(Ss)
+
+    cluster_S = Dict{Int, Vector{UnitRange{Int}}}()
+    cluster_owned = Dict{Int, Vector{Int}}()
+    next_id = 0
+    for i in eachindex(maximal_idx)
+        cluster_S[next_id] = Ss[maximal_idx[i]]
+        cluster_owned[next_id] = copy(owned[i])
+        next_id += 1
+    end
+
+    # heap entries: (size, id_a, id_b) -- lazily checked for staleness on pop
+    heap = BinaryMinHeap{Tuple{Int,Int,Int}}()
+
+    function push_candidates!(new_id::Int, ids)
+        Snew = cluster_S[new_id]
+        for other in ids
+            other == new_id && continue
+            cand = merge_S(Snew, cluster_S[other])
+            sz = prod(length, cand)
+            if sz <= threshold
+                a, b = min(new_id, other), max(new_id, other)
+                push!(heap, (sz, a, b))
+            end
+        end
+    end
+
+    # seed heap with all initial pairs
+    ids = collect(keys(cluster_S))
+    for i in eachindex(ids)
+        push_candidates!(ids[i], ids[i+1:end])
+    end
+
+    while !isempty(heap)
+        sz, a, b = pop!(heap)
+
+        # lazy deletion: skip if either cluster no longer exists
+        (haskey(cluster_S, a) && haskey(cluster_S, b)) || continue
+
+        Sa, Sb = cluster_S[a], cluster_S[b]
+        merged = merge_S(Sa, Sb)
+
+        @assert prod(length, merged) == sz
+
+        new_owned = vcat(cluster_owned[a], cluster_owned[b])
+        delete!(cluster_S, a); delete!(cluster_owned, a)
+        delete!(cluster_S, b); delete!(cluster_owned, b)
+
+        new_id = next_id; next_id += 1
+        cluster_S[new_id] = merged
+        cluster_owned[new_id] = new_owned
+
+        push_candidates!(new_id, collect(keys(cluster_S)))
+    end
+
+    final_ids = collect(keys(cluster_S))
+    return [cluster_S[id] for id in final_ids], [cluster_owned[id] for id in final_ids]
+end
+
+
 function get_coeffs(CMat, EMat, as::TN) where {TA <: Number, TN <: AbstractArray{TA}}
     total = size(EMat,2)
     out = zeros(TA, total)
@@ -1103,9 +1182,96 @@ function get_coeffs(CMat, EMat, as::TN) where {TA <: Number, TN <: AbstractArray
     end
     return out
 end
-
+function get_coeffs( Mfloat::Matrix{Float64}, as::TN) where {TA <: Number, TN <: AbstractArray{TA}}
+    return  Mfloat' * as
+end
 
 function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate, threshold=-1)
+    num_p = size(interval.Low, 1)
+    T = eltype(interval.Low)
+    lbs = Array{T}(undef,num_p) 
+    ubs = Array{T}(undef,num_p) 
+    empty!(M_CACHE)
+
+    if method == SmithBoundsMonomon
+        poly_interval = to_sparse_polynomial(interval)
+        splbs, _ = bounds(poly_interval.Low)
+        _, spubs = bounds(poly_interval.Up)
+	for (i,(lb,ub)) in enumerate(zip(splbs,spubs))
+	    lbs[i] = lb
+	    ubs[i] = ub
+	end
+    elseif method == Overapproximate || method == SmithBoundsOverapproximate
+        for p_idx in 1:num_p
+           lbs[p_idx] , _ = imp_fast_bounds(interval.Low[p_idx, :], interval.bern_terms_coeffs, interval.t, interval.n)
+	    _, ubs[p_idx] = imp_fast_bounds(interval.Up[p_idx, :], interval.bern_terms_coeffs, interval.t, interval.n)
+	    
+        end
+	if method == Overapproximate
+	    return lbs, ubs
+	end
+    end
+
+    @assert all( x -> !isnan(x) , lbs)
+    @assert all( x -> !isnan(x) , ubs)
+
+    constant_terms, term_widths, min_steps_j = @ignore_derivatives precompute(interval.bern_terms_coeffs, interval.bern_terms_2_exp, interval.t, interval.n, interval.order)
+    needed_sets = Vector{Tuple{Vector{UnitRange{Int64}},Int,Symbol}}()
+    for p_idx in 1:num_p
+	S_min, _ =  get_required_dims(interval.Low[p_idx, :],interval.order, interval.n,interval.t,constant_terms,term_widths,min_steps_j; method,threshold )
+	_, S_max =  get_required_dims(interval.Up[p_idx, :],interval.order, interval.n,interval.t,constant_terms,term_widths,min_steps_j; method,threshold )
+	if !isnothing(S_min)
+	    push!(needed_sets,(S_min,p_idx,:low))
+	end
+	if !isnothing(S_max)
+	    push!(needed_sets,(S_max,p_idx,:high))
+	end
+
+    end
+    maximal_sets, owned = partition_maximal_merged_fast(map(x -> x[1], needed_sets); threshold)
+    println( "saved $(length(needed_sets) -  length(maximal_sets))/$(length(needed_sets)) sets") 
+    for (i_idx,S) in enumerate(maximal_sets)
+	#S = needed_sets[i][1]
+
+	lens = [length( S[m]) for m in 1:interval.n]
+	nonscalar = [m for m in  1:interval.n if lens[m] > 1]
+	scalar_dims = [m for m in 1:interval.n if lens[m] == 1]
+	K = length(nonscalar)
+	dims = ntuple(k -> lens[nonscalar[k]], Val(K))
+	
+	if K == 0 
+	    for j in owned[i_idx]
+		p_idx = needed_sets[j][2]
+		if needed_sets[j][3] == :low  
+		    lbs[p_idx] = max(lbs[p_idx], eval_scalar(interval.bern_terms_coeffs,interval.bern_terms_2_exp,interval.Low[p_idx,:],interval.t,interval.n,S))
+		else 
+		    ubs[p_idx] = min( eval_scalar(interval.bern_terms_coeffs,interval.bern_terms_2_exp,interval.Low[p_idx,:],interval.t,interval.n,S), ubs[p_idx])
+		end
+	    end 
+	end
+
+	if K != 0
+	    Mfloat = build_M( interval.bern_terms_coeffs,interval.bern_terms_2_exp,interval.t,interval.n,S,nonscalar,scalar_dims,dims)
+	    for j in owned[i_idx]
+		p_idx = needed_sets[j][2]
+		if needed_sets[j][3] == :low  
+		    lbs[p_idx] = max(lbs[p_idx], minimum(get_coeffs(Mfloat,interval.Low[p_idx,:])))
+		else 
+		    ubs[p_idx] = min(ubs[p_idx], maximum(get_coeffs(Mfloat, interval.Up[p_idx,:]))) 
+		end
+	    end 
+
+	end
+
+    end
+    @assert all( x -> !isnan(x) , lbs)
+    @assert all( x -> !isnan(x) , ubs)
+    return lbs,ubs
+
+end
+
+
+function all_bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate, threshold=-1)
     num_p = size(interval.Low, 1)
     T = eltype(interval.Low)
     llbs = Vector{T}()
@@ -1122,6 +1288,7 @@ function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate,
         poly_interval = to_sparse_polynomial(interval)
         llbs_sp, lubs_sp = bounds(poly_interval.Low)
         ulbs_sp, uubs_sp = bounds(poly_interval.Up)
+
     end
     function round_key(row, digits=10)
         return round.(row; digits=digits)  # returns a Vector, hashable
@@ -1166,6 +1333,7 @@ function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate,
     #        up_evaluated_poly[i] = idx
     #    end
     #end
+    # reenable after here
     low_evaluated_poly = Array{Int64}(undef, size(interval.Low, 1))
     @ignore_derivatives for i in axes(interval.Low, 1)
         row = @view interval.Low[i, :]
@@ -1177,14 +1345,14 @@ function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate,
         row = @view interval.Up[i, :]
         up_evaluated_poly[i] = find_or_insert!(unique_as, buckets, row, (i, false))
     end
+    println("saved $(2*num_p - length(unique_as)) polynomials")
 
     if method != Overapproximate
         constant_terms, term_widths, min_steps_j = @ignore_derivatives precompute(interval.bern_terms_coeffs, interval.bern_terms_2_exp, interval.t, interval.n, interval.order)
     end
-    unique_bounds = Zygote.Buffer(Array{Tuple{Float64,Float64}}(undef, 1), size(unique_as, 1))
-    unique_bounds = Zygote.Buffer(Array{Tuple{Float64,Float64}}(undef, 1), size(unique_as, 1))
+    unique_bounds = Zygote.Buffer(Array{Tuple{Float64,Float64}}(undef, 1), size(interval.Low, 1))
     if method == Overapproximate
-        for i in eachindex(unique_as)
+        for i in axes(interval.Low,1)
             p_idx, is_lower = unique_as[i]
             if is_lower
                 unique_bounds[i] = imp_fast_bounds(interval.Low[p_idx, :], interval.bern_terms_coeffs, interval.t, interval.n)
@@ -1215,6 +1383,7 @@ function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate,
 
         end
         maximal_sets, owned = partition_maximal(map(x -> x[1], needed_sets ))
+	println( "saved $(length(needed_sets) -  length(maximal_sets)) sets") 
         for (i_idx,i) in enumerate(maximal_sets)
             S = needed_sets[i][1]
 
@@ -1227,7 +1396,6 @@ function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate,
 
 
             if K != 0
-                # scalar case: no benefit from M, just do the direct sum (as before)
                 CMat, EMat = build_M( interval.bern_terms_coeffs,interval.bern_terms_2_exp,interval.t,interval.n,S,nonscalar,scalar_dims,dims)
             end
 
@@ -1322,8 +1490,7 @@ function bounds(A::AbstractMatrix, b::AbstractVector, s::CombinedPolyBernsteinIn
         s,
         b,
     )
-    ll, lu, ul, uu = bounds(mapped_interval; method, threshold)
-    return ll, uu
+    return bounds(mapped_interval; method, threshold)
 end
 
 function get_term(t_idx, n)

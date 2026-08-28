@@ -101,7 +101,7 @@ function forward_act(
     #    s = truncate_desired(sym, solver.truncation_terms)
     #end
 
-	ll ,lu ,ul, uu = bounds(s;use_shortcut)
+	ll ,lu ,ul, uu = all_bounds(s;use_shortcut)
 
     if solver.save_bounds
         throw("unimplemented")
@@ -167,7 +167,7 @@ function forward_act(
 	ll, lu = bounds(s.Low,s.X)
 	ul, uu = bounds(s.Up,s.X)
     elseif s isa CombinedPolyBernsteinInterval || s isa DenseBernsteinInterval
-	ll ,lu ,ul, uu = bounds(s)
+	ll ,lu ,ul, uu = all_bounds(s)
     else 
 	throw("should be one of these two types")
     end 

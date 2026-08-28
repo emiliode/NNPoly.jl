@@ -282,7 +282,7 @@ function initialize_params_bounds(
     if ŝ isa BernsteinInterval 
 	    l, u = bounds(ŝ.Low, ŝ.X; method=solver.bounds_method)
     elseif ŝ isa CombinedPolyBernsteinInterval || ŝ isa DenseBernsteinInterval
-	l,u,_, _ = bounds(ŝ ; method=solver.bounds_method, threshold=solver.threshold) #ipsolver.use_shortcut)
+	l,u = bounds(ŝ ; method=solver.bounds_method, threshold=solver.threshold) #ipsolver.use_shortcut)
     else 
 	    throw("should be one of these two types")
     end 
@@ -302,7 +302,7 @@ function initialize_params_bounds(
     )
     for layer in 2:solver.poly_layers
         s_poly = forward_linear(ipsolver,net[layer],s_poly)
-	    l1,_,_,u1 = bounds(s_poly ; ipsolver.use_shortcut, threshold=solver.threshold)
+	    l1,u1 = bounds(s_poly ; ipsolver.use_shortcut, threshold=solver.threshold)
         s_poly = forward_act(ipsolver,net[layer],s_poly)
         poly_lbs = [poly_lbs..., l1]
         poly_ubs = [poly_ubs..., u1]
@@ -491,7 +491,6 @@ function optimise_bounds(
     # l and u (the bounds after the 1st linear layer) throughout the optimization loop
     ŝ, lbs, ubs = #, rs, cs, symmetric_factor, unique_idxs, duplicate_idxs =
         initialize_params_bounds(solver, net, 2, s)
-
     if solver.prune_neurons
         # TODO: maybe add as callback to optimisation?
         ŝ = select_idxs(ŝ, .~(ubs[1] .<= 0), 1)
@@ -517,11 +516,12 @@ function optimise_bounds(
                # unique_idxs,
                # duplicate_idxs,
             )
-            for layer  in 2:solver.poly_layers
-                s_poly = forward_linear(solver.poly_solver,m[layer],s_poly)
-                ll, lu, ul, uu = bounds(s_poly; method=solver.bounds_method, threshold=solver.threshold)
-                s_poly = forward_act(solver.poly_solver,m[layer],s_poly)
-            end
+            #for layer  in 2:solver.poly_layers
+            #    s_poly = forward_linear(solver.poly_solver,m[layer],s_poly)
+            #    #ll, lu, ul, uu = bounds(s_poly; method=solver.bounds_method, threshold=solver.threshold)
+            #    ll,  lu,ul, uu = all_bounds(s_poly; method=solver.bounds_method, threshold=solver.threshold)
+            #    s_poly = forward_act(solver.poly_solver,m[layer],s_poly)
+            #end
             s_crown = NV.forward_network(
                 solver.lin_solver,
                 m[(solver.poly_layers + 1):end],

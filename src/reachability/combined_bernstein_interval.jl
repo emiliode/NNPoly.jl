@@ -124,60 +124,70 @@ function map_sp_to_correct_interval(E::AbstractArray{Int8}, G_Low::TN, G_Up::TN)
 
     return Enew, Gnew_Low, Gnew_Up
 end
-
-function ChainRulesCore.rrule(::typeof(map_sp_to_correct_interval),
-    E::AbstractArray{T}, G_Low::AbstractArray{T},
-    G_Up::AbstractArray) where {T}
+function ChainRulesCore.rrule(::typeof(map_sp_to_correct_interval), E::AbstractArray{Int8}, G_Low::TN, G_Up::TN) where {T<:Number,TN<:AbstractArray{T}}
     p, h = size(E)
     n = size(G_Low, 1)
 
-    # --- Forward pass, while recording the scatter structure ---
-
-    acc_low = Dict{NTuple{p,Int8},Vector{T}}()
-    acc_up = Dict{NTuple{p,Int8},Vector{T}}()
-    key_to_col = Dict{NTuple{p,Int8},Int}()
-
-    # contributions[i] = Vector of (out_col::Int, coeff::Float64)
+    acc_low = Dict{Vector{Int8},Vector{T}}()
+    acc_up  = Dict{Vector{Int8},Vector{T}}()
+    key_to_col = Dict{Vector{Int8},Int}()
     contributions = [Tuple{Int,Float64}[] for _ in 1:h]
 
     ncols = 0
-    @inbounds for i in 1:h
-        e = ntuple(k -> E[k, i], p)
-        cvecs = ntuple(k -> COEFFS2[e[k]+1], p)
-        gcol_low = @view G_Low[:, i]
-        gcol_up = @view G_Up[:, i]
+    e = Vector{Int8}(undef, p)
+    cvecs = Vector{NTuple{3,Float64}}(undef, p)
 
-        for jt in Iterators.product(ntuple(k -> 0:e[k], p)...)
+    @inbounds for i in 1:h
+        for k in 1:p
+            e[k] = E[k, i]
+            cvecs[k] = COEFFS2[e[k]+1]
+        end
+        gcol_low = @view G_Low[:, i]
+        gcol_up  = @view G_Up[:, i]
+
+        idx = zeros(Int8, p)
+        while true
             coeff = 1.0
             for k in 1:p
-                coeff *= cvecs[k][jt[k]+1]
+                coeff *= cvecs[k][idx[k]+1]
             end
-            key = NTuple{p,Int8}(jt)
 
-            col = get(key_to_col, key, 0)
+            col = get(key_to_col, idx, 0)
             if col == 0
                 ncols += 1
                 col = ncols
+                key = copy(idx)
                 key_to_col[key] = col
                 acc_low[key] = coeff .* collect(gcol_low)
-                acc_up[key] = coeff .* collect(gcol_up)
+                acc_up[key]  = coeff .* collect(gcol_up)
             else
-                acc_low[key] .+= coeff .* gcol_low
-                acc_up[key] .+= coeff .* gcol_up
+                acc_low[idx] .+= coeff .* gcol_low
+                acc_up[idx]  .+= coeff .* gcol_up
             end
-
             push!(contributions[i], (col, coeff))
+
+            k = 1
+            while k <= p
+                if idx[k] < e[k]
+                    idx[k] += 1
+                    break
+                else
+                    idx[k] = 0
+                    k += 1
+                end
+            end
+            k > p && break
         end
     end
 
     hnew = ncols
-    Enew = Matrix{Int}(undef, p, hnew)
+    Enew     = Matrix{Int}(undef, p, hnew)
     Gnew_Low = Matrix{T}(undef, n, hnew)
-    Gnew_Up = Matrix{T}(undef, n, hnew)
+    Gnew_Up  = Matrix{T}(undef, n, hnew)
     for (key, col) in key_to_col
-        Enew[:, col] .= key
+        Enew[:, col]     .= key
         Gnew_Low[:, col] .= acc_low[key]
-        Gnew_Up[:, col] .= acc_up[key]
+        Gnew_Up[:, col]  .= acc_up[key]
     end
 
     project_GL = ProjectTo(G_Low)
@@ -185,19 +195,16 @@ function ChainRulesCore.rrule(::typeof(map_sp_to_correct_interval),
 
     function map_sp_pullback(Δ)
         Δ = unthunk(Δ)
-        # Δ is a tangent for the returned tuple (Enew, Gnew_Low, Gnew_Up)
         dEnew, dGL_new, dGU_new = if Δ isa Tuple || Δ isa AbstractVector
             (Δ[1], Δ[2], Δ[3])
         else
-            # Fallback: treat as zero if unexpected
             (NoTangent(), NoTangent(), NoTangent())
         end
-
         dGL_new = dGL_new isa AbstractZero ? nothing : unthunk(dGL_new)
         dGU_new = dGU_new isa AbstractZero ? nothing : unthunk(dGU_new)
 
         dG_Low = zeros(T, n, h)
-        dG_Up = zeros(T, n, h)
+        dG_Up  = zeros(T, n, h)
 
         @inbounds for i in 1:h
             for (col, coeff) in contributions[i]
@@ -205,15 +212,12 @@ function ChainRulesCore.rrule(::typeof(map_sp_to_correct_interval),
                     @views dG_Low[:, i] .+= coeff .* dGL_new[:, col]
                 end
                 if dGU_new !== nothing
-                    @views dG_Up[:, i] .+= coeff .* dGU_new[:, col]
+                    @views dG_Up[:, i]  .+= coeff .* dGU_new[:, col]
                 end
             end
         end
 
-        return (NoTangent(),                 # function itself
-            NoTangent(),                 # E (integer, non-diff)
-            project_GL(dG_Low),          # G_Low
-            project_GU(dG_Up))           # G_Up
+        return (NoTangent(), NoTangent(), project_GL(dG_Low), project_GU(dG_Up))
     end
 
     return (Enew, Gnew_Low, Gnew_Up), map_sp_pullback
@@ -224,19 +228,20 @@ end
 function to_sparse_polynomial(inter::CombinedPolyBernsteinInterval{N,M,O}) where {N<:Number,M<:Integer,O<:Number}
     @assert inter.order <= 2
     num_polys = size(inter.Low, 1)
-    exponents = Matrix{Int8}(undef, 1, inter.n*inter.t)
-    if inter.order == 1
-        # [0,1]: x^1 
-        # [1,1]: x^0
-        exponents[1, :] .=  Int8.(1 .- inter.bern_terms_coeffs[:, 1])  #Int.(1 .- inter.bern_terms[:, 1] )
-    else # assumed to be 2
-        # [0,0,1]: x^2 
-        # [0,1/2,1]: x^1 
-        # [1,1,1]: x^0
-        exponents[1, :] .= Int8.(2 .- (inter.bern_terms_coeffs[:, 2] .* ldexp.(1.0, inter.bern_terms_2_exp[:, 2] .+ 1)))
+    exponents = @ignore_derivatives begin
+	exp = Matrix{Int8}(undef, 1, inter.n*inter.t)
+	if inter.order == 1
+    	    # [0,1]: x^1
+    	    # [1,1]: x^0
+    	    exp[1, :] .=  Int8.(1 .- inter.bern_terms_coeffs[:, 1])  #Int.(1 .- inter.bern_terms[:, 1] )
+    	else # assumed to be 2
+    	    # [0,0,1]: x^2
+    	    # [0,1/2,1]: x^1
+    	    # [1,1,1]: x^0
+    	    exp[1, :] .= Int8.(2 .- (inter.bern_terms_coeffs[:, 2] .* ldexp.(1.0, inter.bern_terms_2_exp[:, 2] .+ 1)))
+    	end
+    	reshape(exp, inter.n, inter.t)
     end
-    exponents::Matrix{Int8} = reshape(exponents, inter.n, inter.t)
-
 
     E, G_Low, G_Up = map_sp_to_correct_interval(exponents, inter.Low, inter.Up)
     return PolyInterval(
@@ -302,8 +307,6 @@ function with_coeffs(row, bern_terms, n)
     return scales .* bern_terms
 end
 function get_poly_low(poly_idx::Int, interval::CombinedPolyBernsteinInterval)
-    #@show size(interval.Low)
-    #@show size(interval.bern_terms)
     return with_coeffs(interval.Low[poly_idx, :], interval.bern_terms, interval.n)
 end
 function get_poly_up(poly_idx::Int, interval::CombinedPolyBernsteinInterval)
@@ -325,12 +328,9 @@ function init_combined_bernstein_interval(h::Hyperrectangle)
     unfixed_mask = (h.radius .!= 0)
     n = count(unfixed_mask)
     X = Hyperrectangle(h.center[unfixed_mask], h.radius[unfixed_mask])
-    #@show unfixed_mask,n
-    #@polyvar x[1:num_polys]
     bern_terms_twoExps = zeros(Int8, (n+1)*n, 2)
     bern_terms_coeffs = trues((n+1)*n, 2)
     coeff_matrix = zeros(eltype(h.radius), num_polys, n+1)
-    #@show coeff_matrix
 
     # one term x_i for each unfixed variable
     for x_i in 1:n
@@ -413,7 +413,6 @@ I  - (BernsteinInterval) bernsteinInterval
 b  - (vector) bias
 """
 function interval_map(W⁻, W⁺, I::CombinedPolyBernsteinInterval, b; use_memory_optimizations=true)
-    #@show W⁻ , W⁺
     new_low = W⁻ * I.Up + W⁺ * I.Low
     new_up = W⁻ * I.Low + W⁺ * I.Up
     return translate(CombinedPolyBernsteinInterval(new_low, new_up, I.bern_terms_coeffs, I.bern_terms_2_exp, I.t, I.n, I.order, I.X), b)
@@ -471,7 +470,6 @@ function square(Low::TC, Up::TC, bern_terms::TN; use_memory_optimizations=true) 
     #return CombinedPolyBernsteinInterval(new_low,new_up,new_zeros,new_powers_of_two,new_t,interval.n,new_order,interval.X)
 end
 function elevate_all_to(bern_terms, new_order::Int64)
-    #@show interval
     bern_term_rows = size(bern_terms, 1)
     order = size(bern_terms, 2) - 1
     diff = new_order - order
@@ -653,17 +651,14 @@ global calls_higher=0
 """
 Build the (t × prod(dims)) matrix M such that, for a given `as` vector sharing this S,
     out = reshape(M' * as, dims)
-i.e. M[t_idx, :] holds the flattened outer product of mask .* 2^exp for term t_idx,
-restricted to the nonscalar dimensions selected by S, already folded together with
-the scalar-dimension contribution (coeff_scalar_factor(t_idx)).
+i.e. M[t_idx, :] holds the flattened outer product of coeff .* 2^exp for term t_idx,
 
-Returns `nothing` if this S made every single term structurally zero (rare edge case,
-caller should treat as an all-zero M).
 """
 function build_M(coeffs::BitMatrix, twoExps::Matrix{Int8}, t::Int, n::Int, S, nonscalar, scalar_dims, dims::NTuple{K,Int}) where {K}
     total = prod(dims)
     #Mfloat = Matrix{Float64}(undef,t,total)
     Mfloat = zeros(t,total)
+
 
     # scratch buffers reused across t_idx to avoid per-term allocation
     for t_idx in 1:t
@@ -915,7 +910,6 @@ function evaluate_reduced_tensor(coeffs, twoExps, as, t, n, S)
     lens = [  length(S[m]) for m in 1:n]
     nonscalar = [m for m in 1:n if lens[m] > 1]   # nur die "echten" Dimensionen
 
-    #@show calls_0d,calls_1d,calls_2d,calls_higher
 
     dims = ntuple(k -> lens[nonscalar[k]], length(nonscalar))
     return _eval_broadcast(coeffs, twoExps, as, t, n, S, nonscalar,dims )
@@ -1007,9 +1001,9 @@ function get_required_dims(as::AbstractArray{N},  order::Int8, n::Int, t::Int, c
         S_min[x_i], S_max[x_i] = bound_algo(as, order, t, x_i, constant_terms, term_widths, non_constant_alphas, inc_mask, dec_mask, width_dec_full, width_inc_full, all_diff_dec, all_diff_inc)
     end
 
-    min_possibilites = prod(length, S_min)
+    min_possibilites = prod_capped(S_min; cap=threshold)
 
-    if min_possibilites > threshold || min_possibilites < 0 # check for overflow
+    if min_possibilites !== nothing 
         return nothing , nothing
     else 
         return S_min, S_max
@@ -1108,6 +1102,18 @@ end
 function merge_S(a::Vector{UnitRange{Int}}, b::Vector{UnitRange{Int}})
     return [min(first(a[j]), first(b[j])):max(last(a[j]), last(b[j])) for j in eachindex(a)]
 end
+# avoids overflows
+function prod_capped(dims; cap::Int)
+    p = 1
+    for d in dims
+        wp = widemul(p, length(d))   # Int128, can't overflow here
+        if wp > cap
+            return nothing
+        end
+        p = Int(wp)                  # safe: wp <= cap, cap is an Int64
+    end
+    return p
+end
 function partition_maximal_merged_fast(Ss::Vector{Vector{UnitRange{Int}}}; threshold::Int)
     maximal_idx, owned = partition_maximal(Ss)
 
@@ -1128,8 +1134,8 @@ function partition_maximal_merged_fast(Ss::Vector{Vector{UnitRange{Int}}}; thres
         for other in ids
             other == new_id && continue
             cand = merge_S(Snew, cluster_S[other])
-            sz = prod(length, cand)
-            if sz <= threshold
+            sz = prod_capped(cand; cap=threshold)
+            if sz !== nothing 
                 a, b = min(new_id, other), max(new_id, other)
                 push!(heap, (sz, a, b))
             end
@@ -1189,9 +1195,8 @@ end
 function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate, threshold=-1)
     num_p = size(interval.Low, 1)
     T = eltype(interval.Low)
-    lbs = Array{T}(undef,num_p) 
-    ubs = Array{T}(undef,num_p) 
-    empty!(M_CACHE)
+    lbs = Zygote.Buffer(Array{T}(undef, num_p))
+    ubs = Zygote.Buffer(Array{T}(undef, num_p))
 
     if method == SmithBoundsMonomon
         poly_interval = to_sparse_polynomial(interval)
@@ -1208,7 +1213,7 @@ function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate,
 	    
         end
 	if method == Overapproximate
-	    return lbs, ubs
+	    return copy(lbs), copy(ubs)
 	end
     end
 
@@ -1216,19 +1221,22 @@ function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate,
     @assert all( x -> !isnan(x) , ubs)
 
     constant_terms, term_widths, min_steps_j = @ignore_derivatives precompute(interval.bern_terms_coeffs, interval.bern_terms_2_exp, interval.t, interval.n, interval.order)
-    needed_sets = Vector{Tuple{Vector{UnitRange{Int64}},Int,Symbol}}()
-    for p_idx in 1:num_p
-	S_min, _ =  get_required_dims(interval.Low[p_idx, :],interval.order, interval.n,interval.t,constant_terms,term_widths,min_steps_j; method,threshold )
-	_, S_max =  get_required_dims(interval.Up[p_idx, :],interval.order, interval.n,interval.t,constant_terms,term_widths,min_steps_j; method,threshold )
-	if !isnothing(S_min)
-	    push!(needed_sets,(S_min,p_idx,:low))
-	end
-	if !isnothing(S_max)
-	    push!(needed_sets,(S_max,p_idx,:high))
-	end
+    needed_sets = @ignore_derivatives begin 
+	ns = Vector{Tuple{Vector{UnitRange{Int64}},Int,Symbol}}()
+	for p_idx in 1:num_p
+	    S_min, _ =  get_required_dims(interval.Low[p_idx, :],interval.order, interval.n,interval.t,constant_terms,term_widths,min_steps_j; method,threshold )
+	    _, S_max =  get_required_dims(interval.Up[p_idx, :],interval.order, interval.n,interval.t,constant_terms,term_widths,min_steps_j; method,threshold )
+	    if !isnothing(S_min)
+		push!(ns,(S_min,p_idx,:low))
+	    end
+	    if !isnothing(S_max)
+		push!(ns,(S_max,p_idx,:high))
+	    end
 
+	end
+	ns
     end
-    maximal_sets, owned = partition_maximal_merged_fast(map(x -> x[1], needed_sets); threshold)
+    maximal_sets, owned = @ignore_derivatives partition_maximal_merged_fast(map(x -> x[1], needed_sets); threshold)
     println( "saved $(length(needed_sets) -  length(maximal_sets))/$(length(needed_sets)) sets") 
     for (i_idx,S) in enumerate(maximal_sets)
 	#S = needed_sets[i][1]
@@ -1251,7 +1259,7 @@ function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate,
 	end
 
 	if K != 0
-	    Mfloat = build_M( interval.bern_terms_coeffs,interval.bern_terms_2_exp,interval.t,interval.n,S,nonscalar,scalar_dims,dims)
+	    Mfloat = @ignore_derivatives build_M(interval.bern_terms_coeffs,interval.bern_terms_2_exp,interval.t,interval.n,S,nonscalar,scalar_dims,dims)
 	    for j in owned[i_idx]
 		p_idx = needed_sets[j][2]
 		if needed_sets[j][3] == :low  
@@ -1266,7 +1274,7 @@ function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate,
     end
     @assert all( x -> !isnan(x) , lbs)
     @assert all( x -> !isnan(x) , ubs)
-    return lbs,ubs
+    return copy(lbs),copy(ubs)
 
 end
 
@@ -1382,7 +1390,7 @@ function all_bounds(interval::CombinedPolyBernsteinInterval; method=Overapproxim
             end
 
         end
-        maximal_sets, owned = partition_maximal(map(x -> x[1], needed_sets ))
+        maximal_sets, owned =  partition_maximal(map(x -> x[1], needed_sets ))
 	println( "saved $(length(needed_sets) -  length(maximal_sets)) sets") 
         for (i_idx,i) in enumerate(maximal_sets)
             S = needed_sets[i][1]

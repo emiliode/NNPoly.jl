@@ -1003,7 +1003,7 @@ function get_required_dims(as::AbstractArray{N},  order::Int8, n::Int, t::Int, c
 
     min_possibilites = prod_capped(S_min; cap=threshold)
 
-    if min_possibilites !== nothing 
+    if isnothing(min_possibilites)
         return nothing , nothing
     else 
         return S_min, S_max

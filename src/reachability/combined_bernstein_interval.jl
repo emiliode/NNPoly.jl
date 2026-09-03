@@ -925,13 +925,18 @@ function imp_fast_bounds(as::AbstractArray, coeffs::BitMatrix, t::Int, n)
     # if orders == 2 each term looks like: [0,0,1] , [0, 0.5,1], [1,1,1]
     # if orders == 1 each term looks like: [0,1] , [1 , 1], 
     # therefore right_prod is always 1 and left_prod \in {0,1} <= right_prod 
-    left_prods = reshape(reduce(&, reshape(coeffs[:, 1], n, t), dims=1), t) # [left_prod_term1, left_prod_term2, ...  ]
+    left_prods = @ignore_derivatives reshape(reduce(&, reshape(coeffs[:, 1], n, t), dims=1), t) # [left_prod_term1, left_prod_term2, ...  ]
     left_prod_with_coeff = as .* left_prods
 
     as_pos_mask = as .>= 0
+    pos_part = ifelse.(as_pos_mask, as, zero(eltype(as)))
+    neg_part = ifelse.(as_pos_mask,  zero(eltype(as)),as)
 
-    b_min = sum(left_prod_with_coeff[as_pos_mask]) + sum(as[.!as_pos_mask])
-    b_max = sum(left_prod_with_coeff[.!as_pos_mask]) + sum(as[as_pos_mask])
+    lp_pos = ifelse.(as_pos_mask, left_prod_with_coeff, zero(eltype(as)))
+    lp_neg = ifelse.(as_pos_mask,  zero(eltype(as)),left_prod_with_coeff)
+
+    b_min = sum(lp_pos) + sum(neg_part)
+    b_max = sum(lp_neg) + sum(pos_part)
 
     return b_min, b_max
 end

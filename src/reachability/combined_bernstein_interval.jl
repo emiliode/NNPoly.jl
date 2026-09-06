@@ -752,6 +752,31 @@ function eval_scalar(coeffs::BitMatrix, twoExps::Matrix{Int8}, as::Vector{TA}, t
     end
     return s
 end
+function eval_scalar_with_grad(coeffs::BitMatrix, twoExps::Matrix{Int8}, as::Vector{TA}, t, n,S ) where {TA}
+    s = zero(TA)
+    coeff_vec = zeros(TA, t)
+    for t_idx in 1:t
+	 a = as[t_idx]
+        iszero(a) && continue
+        rows = get_term(t_idx, n)
+        exp_acc = 0
+        zero_hit = false
+        @inbounds for m in 1:n
+            r,c = rows[m], first(S[m])
+            if !coeffs[r,c]
+                zero_hit = true 
+                break 
+            end
+            exp_acc += twoExps[r,c]
+        end
+
+        zero_hit && continue
+	scale = ldexp(1.0, exp_acc)
+        coeff_vec[t_idx] = scale
+        s += a * scale
+    end
+    return s, coeff_vec
+end
 function _eval_broadcast(coeffs::BitMatrix, twoExps::Matrix{Int8}, as::Vector{TA}, t, n, S, nonscalar, dims::NTuple{K,Int}) where {K,TA}
     if K == 0
         s = zero(TA)
@@ -1196,92 +1221,215 @@ end
 function get_coeffs( Mfloat::Matrix{Float64}, as::TN) where {TA <: Number, TN <: AbstractArray{TA}}
     return  Mfloat' * as
 end
+function ChainRulesCore.rrule(::typeof(get_coeffs), Mfloat::Matrix{Float64}, as::Vector{TA}) where {TA<:Number}
+    out = Mfloat' * as
 
-function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate, threshold=-1)
+    project_as = ProjectTo(as)
+
+    function get_coeffs_pullback(Δout)
+        Δout = unthunk(Δout)
+        Δas = Mfloat * Δout
+        return (NoTangent(), NoTangent(), project_as(Δas))
+    end
+
+    return out, get_coeffs_pullback
+end
+
+
+
+function bernstein_bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate, threshold=-1)
     num_p = size(interval.Low, 1)
     T = eltype(interval.Low)
-    lbs = Zygote.Buffer(Array{T}(undef, num_p))
-    ubs = Zygote.Buffer(Array{T}(undef, num_p))
+    lbs = Vector{T}(undef, num_p)
+    ubs = Vector{T}(undef, num_p)
+    for p_idx in 1:num_p
+	lbs[p_idx], _ = imp_fast_bounds(interval.Low[p_idx, :], interval.bern_terms_coeffs, interval.t, interval.n)
+	_, ubs[p_idx] = imp_fast_bounds(interval.Up[p_idx, :], interval.bern_terms_coeffs, interval.t, interval.n)
+    end
+    if method == Overapproximate
+	return lbs, ubs
+    end
+   
+    constant_terms, term_widths, min_steps_j = precompute(interval.bern_terms_coeffs, interval.bern_terms_2_exp, interval.t, interval.n, interval.order)
+    needed_sets = Vector{Tuple{Vector{UnitRange{Int64}},Int,Symbol}}()
+    for p_idx in 1:num_p
+        S_min, _ = get_required_dims(interval.Low[p_idx, :], interval.order, interval.n, interval.t, constant_terms, term_widths, min_steps_j; method, threshold)
+        _, S_max = get_required_dims(interval.Up[p_idx, :], interval.order, interval.n, interval.t, constant_terms, term_widths, min_steps_j; method, threshold)
+        !isnothing(S_min) && push!(needed_sets, (S_min, p_idx, :low))
+        !isnothing(S_max) && push!(needed_sets, (S_max, p_idx, :high))
+    end
 
-    if method == SmithBoundsMonomon
+    maximal_sets, owned = partition_maximal_merged_fast(map(x -> x[1], needed_sets); threshold)
+
+    for (i_idx, S) in enumerate(maximal_sets)
+        lens = [length(S[m]) for m in 1:interval.n]
+        nonscalar = [m for m in 1:interval.n if lens[m] > 1]
+        scalar_dims = [m for m in 1:interval.n if lens[m] == 1]
+        K = length(nonscalar)
+        dims = ntuple(k -> lens[nonscalar[k]], Val(K))
+
+        if K == 0
+            for j in owned[i_idx]
+                p_idx = needed_sets[j][2]
+                if needed_sets[j][3] == :low
+                    val = eval_scalar(interval.bern_terms_coeffs, interval.bern_terms_2_exp, interval.Low[p_idx,:], interval.t, interval.n, S)
+                    lbs[p_idx] = max(lbs[p_idx], val)
+                else
+                    val = eval_scalar(interval.bern_terms_coeffs, interval.bern_terms_2_exp, interval.Up[p_idx,:], interval.t, interval.n, S)
+                    ubs[p_idx] = min(ubs[p_idx], val)
+                end
+            end
+        else
+            Mfloat = build_M(interval.bern_terms_coeffs, interval.bern_terms_2_exp, interval.t, interval.n, S, nonscalar, scalar_dims, dims)
+            for j in owned[i_idx]
+                p_idx = needed_sets[j][2]
+                if needed_sets[j][3] == :low
+                    lbs[p_idx] = max(lbs[p_idx], minimum(Mfloat' * interval.Low[p_idx,:]))
+                else
+                    ubs[p_idx] = min(ubs[p_idx], maximum(Mfloat' * interval.Up[p_idx,:]))
+                end
+            end
+        end
+    end
+
+    return lbs, ubs
+end
+
+"""
+Top-level bounds function: dispatches to bernstein_bounds for Overapproximate/SmithBoundsOverapproximate
+(which has a custom, memory-safe rrule), or handles SmithBoundsMonomon by combining bernstein_bounds
+with the monomial-basis bound -- this branch is NOT covered by a custom rrule, so Zygote traces it
+normally (acceptable since it's not the branch causing memory issues).
+"""
+function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate, threshold=-1)
+    if method == Overapproximate || method == SmithBoundsOverapproximate
+        return bernstein_bounds(interval; method, threshold)
+    elseif method == SmithBoundsMonomon
+        lbs, ubs = bernstein_bounds(interval; method=SmithBoundsOverapproximate, threshold)
         poly_interval = to_sparse_polynomial(interval)
         splbs, _ = bounds(poly_interval.Low)
         _, spubs = bounds(poly_interval.Up)
-	for (i,(lb,ub)) in enumerate(zip(splbs,spubs))
-	    lbs[i] = lb
-	    ubs[i] = ub
-	end
-    elseif method == Overapproximate || method == SmithBoundsOverapproximate
-        for p_idx in 1:num_p
-           lbs[p_idx] , _ = imp_fast_bounds(interval.Low[p_idx, :], interval.bern_terms_coeffs, interval.t, interval.n)
-	    _, ubs[p_idx] = imp_fast_bounds(interval.Up[p_idx, :], interval.bern_terms_coeffs, interval.t, interval.n)
-	    
-        end
-	if method == Overapproximate
-	    return copy(lbs), copy(ubs)
-	end
+        return max.(lbs, splbs), min.(ubs, spubs)
+    else
+        error("unknown method $method")
     end
-
-    @assert all( x -> !isnan(x) , lbs)
-    @assert all( x -> !isnan(x) , ubs)
-
-    constant_terms, term_widths, min_steps_j = @ignore_derivatives precompute(interval.bern_terms_coeffs, interval.bern_terms_2_exp, interval.t, interval.n, interval.order)
-    needed_sets = @ignore_derivatives begin 
-	ns = Vector{Tuple{Vector{UnitRange{Int64}},Int,Symbol}}()
-	for p_idx in 1:num_p
-	    S_min, _ =  get_required_dims(interval.Low[p_idx, :],interval.order, interval.n,interval.t,constant_terms,term_widths,min_steps_j; method,threshold )
-	    _, S_max =  get_required_dims(interval.Up[p_idx, :],interval.order, interval.n,interval.t,constant_terms,term_widths,min_steps_j; method,threshold )
-	    if !isnothing(S_min)
-		push!(ns,(S_min,p_idx,:low))
-	    end
-	    if !isnothing(S_max)
-		push!(ns,(S_max,p_idx,:high))
-	    end
-
-	end
-	ns
-    end
-    maximal_sets, owned = @ignore_derivatives partition_maximal_merged_fast(map(x -> x[1], needed_sets); threshold)
-    println( "saved $(length(needed_sets) -  length(maximal_sets))/$(length(needed_sets)) sets") 
-    for (i_idx,S) in enumerate(maximal_sets)
-	#S = needed_sets[i][1]
-
-	lens = [length( S[m]) for m in 1:interval.n]
-	nonscalar = [m for m in  1:interval.n if lens[m] > 1]
-	scalar_dims = [m for m in 1:interval.n if lens[m] == 1]
-	K = length(nonscalar)
-	dims = ntuple(k -> lens[nonscalar[k]], Val(K))
-	
-	if K == 0 
-	    for j in owned[i_idx]
-		p_idx = needed_sets[j][2]
-		if needed_sets[j][3] == :low  
-		    lbs[p_idx] = max(lbs[p_idx], eval_scalar(interval.bern_terms_coeffs,interval.bern_terms_2_exp,interval.Low[p_idx,:],interval.t,interval.n,S))
-		else 
-		    ubs[p_idx] = min( eval_scalar(interval.bern_terms_coeffs,interval.bern_terms_2_exp,interval.Low[p_idx,:],interval.t,interval.n,S), ubs[p_idx])
-		end
-	    end 
-	end
-
-	if K != 0
-	    Mfloat = @ignore_derivatives build_M(interval.bern_terms_coeffs,interval.bern_terms_2_exp,interval.t,interval.n,S,nonscalar,scalar_dims,dims)
-	    for j in owned[i_idx]
-		p_idx = needed_sets[j][2]
-		if needed_sets[j][3] == :low  
-		    lbs[p_idx] = max(lbs[p_idx], minimum(get_coeffs(Mfloat,interval.Low[p_idx,:])))
-		else 
-		    ubs[p_idx] = min(ubs[p_idx], maximum(get_coeffs(Mfloat, interval.Up[p_idx,:]))) 
-		end
-	    end 
-
-	end
-
-    end
-    @assert all( x -> !isnan(x) , lbs)
-    @assert all( x -> !isnan(x) , ubs)
-    return copy(lbs),copy(ubs)
-
 end
+
+function ChainRulesCore.rrule(::typeof(bernstein_bounds), interval::CombinedPolyBernsteinInterval; method=Overapproximate, threshold=-1)
+    num_p = size(interval.Low, 1)
+    T = eltype(interval.Low)
+
+    lbs = Vector{T}(undef, num_p)
+    ubs = Vector{T}(undef, num_p)
+    winning_low_coeffs = Vector{Vector{T}}(undef, num_p)
+    winning_up_coeffs  = Vector{Vector{T}}(undef, num_p)
+
+    left_prods = reshape(reduce(&, reshape(interval.bern_terms_coeffs[:, 1], interval.n, interval.t), dims=1), interval.t)
+
+    for p_idx in 1:num_p
+        as_low = interval.Low[p_idx, :]
+        as_up  = interval.Up[p_idx, :]
+
+        lo, _ = imp_fast_bounds(as_low, interval.bern_terms_coeffs, interval.t, interval.n)
+        _, hi = imp_fast_bounds(as_up,  interval.bern_terms_coeffs, interval.t, interval.n)
+        lbs[p_idx] = lo
+        ubs[p_idx] = hi
+
+        # d(b_min)/d(as[i]) = left_prods[i] if as[i]>=0 else 1
+        # d(b_max)/d(as[i]) = 1 if as[i]>=0 else left_prods[i]
+        winning_low_coeffs[p_idx] = ifelse.(as_low .>= 0, left_prods, one(T))
+        winning_up_coeffs[p_idx]  = ifelse.(as_up  .>= 0, one(T), left_prods)
+    end
+
+    if method == Overapproximate
+        function pullback_overapprox(Δ)
+            Δlbs, Δubs = unthunk(Δ)
+            dLow = zeros(T, num_p, interval.t)
+            dUp  = zeros(T, num_p, interval.t)
+            for p_idx in 1:num_p
+                dLow[p_idx, :] .= Δlbs[p_idx] .* winning_low_coeffs[p_idx]
+                dUp[p_idx, :]  .= Δubs[p_idx] .* winning_up_coeffs[p_idx]
+            end
+            dinterval = Tangent{CombinedPolyBernsteinInterval}(Low=dLow, Up=dUp)
+            return (NoTangent(), dinterval)
+        end
+        return (lbs, ubs), pullback_overapprox
+    end
+
+    # method == SmithBoundsOverapproximate: refine via clusters
+    constant_terms, term_widths, min_steps_j = precompute(interval.bern_terms_coeffs, interval.bern_terms_2_exp, interval.t, interval.n, interval.order)
+    needed_sets = Vector{Tuple{Vector{UnitRange{Int64}},Int,Symbol}}()
+    for p_idx in 1:num_p
+        S_min, _ = get_required_dims(interval.Low[p_idx, :], interval.order, interval.n, interval.t, constant_terms, term_widths, min_steps_j; method, threshold)
+        _, S_max = get_required_dims(interval.Up[p_idx, :], interval.order, interval.n, interval.t, constant_terms, term_widths, min_steps_j; method, threshold)
+        !isnothing(S_min) && push!(needed_sets, (S_min, p_idx, :low))
+        !isnothing(S_max) && push!(needed_sets, (S_max, p_idx, :high))
+    end
+
+    maximal_sets, owned = partition_maximal_merged_fast(map(x -> x[1], needed_sets); threshold)
+
+    for (i_idx, S) in enumerate(maximal_sets)
+        lens = [length(S[m]) for m in 1:interval.n]
+        nonscalar = [m for m in 1:interval.n if lens[m] > 1]
+        scalar_dims = [m for m in 1:interval.n if lens[m] == 1]
+        K = length(nonscalar)
+        dims = ntuple(k -> lens[nonscalar[k]], Val(K))
+
+        if K == 0
+            for j in owned[i_idx]
+                p_idx = needed_sets[j][2]
+                if needed_sets[j][3] == :low
+                    val, coeff_vec = eval_scalar_with_grad(interval.bern_terms_coeffs, interval.bern_terms_2_exp, interval.Low[p_idx,:], interval.t, interval.n, S)
+                    if val > lbs[p_idx]
+                        lbs[p_idx] = val
+                        winning_low_coeffs[p_idx] = coeff_vec
+                    end
+                else
+                    val, coeff_vec = eval_scalar_with_grad(interval.bern_terms_coeffs, interval.bern_terms_2_exp, interval.Up[p_idx,:], interval.t, interval.n, S)
+                    if val < ubs[p_idx]
+                        ubs[p_idx] = val
+                        winning_up_coeffs[p_idx] = coeff_vec
+                    end
+                end
+            end
+        else
+            Mfloat = build_M(interval.bern_terms_coeffs, interval.bern_terms_2_exp, interval.t, interval.n, S, nonscalar, scalar_dims, dims)
+            for j in owned[i_idx]
+                p_idx = needed_sets[j][2]
+                if needed_sets[j][3] == :low
+                    vals = Mfloat' * interval.Low[p_idx,:]
+                    val, flat_idx = findmin(vals)
+                    if val > lbs[p_idx]
+                        lbs[p_idx] = val
+                        winning_low_coeffs[p_idx] = copy(@view Mfloat[:, flat_idx])
+                    end
+                else
+                    vals = Mfloat' * interval.Up[p_idx,:]
+                    val, flat_idx = findmax(vals)
+                    if val < ubs[p_idx]
+                        ubs[p_idx] = val
+                        winning_up_coeffs[p_idx] = copy(@view Mfloat[:, flat_idx])
+                    end
+                end
+            end
+        end
+    end
+
+    function pullback(Δ)
+        Δlbs, Δubs = unthunk(Δ)
+        dLow = zeros(T, num_p, interval.t)
+        dUp  = zeros(T, num_p, interval.t)
+        for p_idx in 1:num_p
+            dLow[p_idx, :] .= Δlbs[p_idx] .* winning_low_coeffs[p_idx]
+            dUp[p_idx, :]  .= Δubs[p_idx] .* winning_up_coeffs[p_idx]
+        end
+        dinterval = Tangent{CombinedPolyBernsteinInterval}(Low=dLow, Up=dUp)
+        return (NoTangent(), dinterval)
+    end
+
+    return (lbs, ubs), pullback
+end
+
 
 
 function all_bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate, threshold=-1)

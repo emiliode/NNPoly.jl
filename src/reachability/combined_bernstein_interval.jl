@@ -1240,14 +1240,30 @@ end
 function bernstein_bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate, threshold=-1)
     num_p = size(interval.Low, 1)
     T = eltype(interval.Low)
-    lbs = Vector{T}(undef, num_p)
-    ubs = Vector{T}(undef, num_p)
-    for p_idx in 1:num_p
-	lbs[p_idx], _ = imp_fast_bounds(interval.Low[p_idx, :], interval.bern_terms_coeffs, interval.t, interval.n)
-	_, ubs[p_idx] = imp_fast_bounds(interval.Up[p_idx, :], interval.bern_terms_coeffs, interval.t, interval.n)
-    end
-    if method == Overapproximate
-	return lbs, ubs
+    #lbs = Vector{T}(undef, num_p)
+    #ubs = Vector{T}(undef, num_p)
+    #for p_idx in 1:num_p
+    #    lbs[p_idx], _ = imp_fast_bounds(interval.Low[p_idx, :], interval.bern_terms_coeffs, interval.t, interval.n)
+    #    _, ubs[p_idx] = imp_fast_bounds(interval.Up[p_idx, :], interval.bern_terms_coeffs, interval.t, interval.n)
+
+
+    #end
+
+    if method == Overapproximate || SmithBoundsOverapproximate
+
+	left_prods = @ignore_derivatives reshape(reduce(&, reshape(interval.bern_terms_coeffs[:, 1], interval.n, interval.t), dims=1), interval.t) # [left_prod_term1, left_prod_term2, ...  ]
+
+
+	lbs = max.(interval.Low,0) * left_prods .+ min.(interval.Low,0) * ones(interval.t) 
+
+	ubs = min.(interval.Up,0) * left_prods .+ max.(interval.Low,0) * ones(interval.t) 
+
+	if method == Overapproximate
+	    return lbs, ubs
+	end
+    else 
+	lbs = fill(-Inf, num_p)
+	ubs = fill(Inf, num_p)
     end
    
     constant_terms, term_widths, min_steps_j = precompute(interval.bern_terms_coeffs, interval.bern_terms_2_exp, interval.t, interval.n, interval.order)

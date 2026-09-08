@@ -6,8 +6,8 @@ MNIST_PATH = "./eval/mnist_fc_growing"
 TIMEOUT  = 1800
 
 println("precompiling ...")
-#solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
-solver = PolyCROWNBern(bounds_method=SmithBoundsMonomon, interval_repr=CombinedImp, poly_layers=1,  threshold=500000)
+solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
+#solver = PolyCROWNBern(bounds_method=Overapproximate, interval_repr=CombinedImp, poly_layers=1,  threshold=5000)
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     "./eval/mnist_fc",
@@ -25,16 +25,16 @@ date_string = Dates.format(current_time, "yyyy-mm-dd_HH-MM-SS")
 
 patience = 2
 properties = 0:14
-n_unfixed = 40:50
+n_unfixed = 1:50
 model_paths = [
     "./eval/mnist_fc/onnx/mnist-net_256x2.onnx",
     "./eval/mnist_fc/onnx/mnist-net_256x4.onnx",
     "./eval/mnist_fc/onnx/mnist-net_256x6.onnx",
 ]
 params = NP.OptimisationParams(
-    n_steps = 1,#typemax(Int),
+    n_steps = 10,#typemax(Int),
     timeout = 60.0,
-    print_freq = 25,
+    print_freq = 1,
     y_stop = 0.0,
     save_ys = true,
     save_times = true,
@@ -52,12 +52,12 @@ open(logfile, "w") do f
 end
 net_prop_reachedtimeout = fill(false,length(model_paths)*length(properties))
 
-net_prop_reachedtimeout = Bool[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 
 
-for n_un in n_unfixed
+#for n_un in n_unfixed
+for n_un in 1:1
 
-    for (model_i,model_path) in enumerate(model_paths)
+    for (model_i,model_path) in enumerate([model_paths[2]])
 	net = NP.onnx2CROWNNetwork(
     	    model_path,
     	    dtype = Float64,
@@ -65,7 +65,6 @@ for n_un in n_unfixed
     	    first_layer_degree = 2,
     	    poly_layer=1,
     	)
-	#for prop in properties
 	for prop in properties
 	    # if the last prop took over TIMEOUT seconds skip it. 
 	    if (net_prop_reachedtimeout[(model_i -1)*length(properties) + prop + 1  ]) 

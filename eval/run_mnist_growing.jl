@@ -6,8 +6,8 @@ MNIST_PATH = "./eval/mnist_fc_growing"
 TIMEOUT  = 1800
 
 println("precompiling ...")
-solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
-#solver = PolyCROWNBern(bounds_method=Overapproximate, interval_repr=CombinedImp, poly_layers=1,  threshold=5000)
+#solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
+solver = PolyCROWNBern(bounds_method=Overapproximate, interval_repr=CombinedImp, poly_layers=1,  threshold=5000)
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     "./eval/mnist_fc",
@@ -32,7 +32,7 @@ model_paths = [
     "./eval/mnist_fc/onnx/mnist-net_256x6.onnx",
 ]
 params = NP.OptimisationParams(
-    n_steps = 10,#typemax(Int),
+    n_steps = 1,#typemax(Int),
     timeout = 60.0,
     print_freq = 1,
     y_stop = 0.0,
@@ -54,10 +54,9 @@ net_prop_reachedtimeout = fill(false,length(model_paths)*length(properties))
 
 
 
-#for n_un in n_unfixed
-for n_un in 1:1
+for n_un in n_unfixed
 
-    for (model_i,model_path) in enumerate([model_paths[2]])
+    for (model_i,model_path) in enumerate(model_paths)
 	net = NP.onnx2CROWNNetwork(
     	    model_path,
     	    dtype = Float64,

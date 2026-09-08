@@ -1256,7 +1256,7 @@ function bernstein_bounds(interval::CombinedPolyBernsteinInterval; method=Overap
 
 	lbs = max.(interval.Low,0) * left_prods .+ min.(interval.Low,0) * ones(interval.t) 
 
-	ubs = min.(interval.Up,0) * left_prods .+ max.(interval.Low,0) * ones(interval.t) 
+	ubs = min.(interval.Up,0) * left_prods .+ max.(interval.Up,0) * ones(interval.t) 
 
 	if method == Overapproximate
 	    return lbs, ubs

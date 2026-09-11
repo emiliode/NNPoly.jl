@@ -1146,7 +1146,7 @@ function prod_capped(dims; cap::Int)
 end
 function partition_maximal_merged_fast(Ss::Vector{Vector{UnitRange{Int}}}; threshold::Int)
     maximal_idx, owned = partition_maximal(Ss)
-
+    return [Ss[id] for id in maximal_idx], owned
     cluster_S = Dict{Int, Vector{UnitRange{Int}}}()
     cluster_owned = Dict{Int, Vector{Int}}()
     next_id = 0

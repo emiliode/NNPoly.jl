@@ -5,9 +5,11 @@ const NP = NNPoly
 MNIST_PATH = "./eval/mnist_fc_growing"
 TIMEOUT  = 1800
 
+RUNNERID = 0 # set to 0..14
+
 println("precompiling ...")
 #solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
-solver = PolyCROWNBern(bounds_method=Overapproximate, interval_repr=CombinedImp, poly_layers=1,  threshold=5000)
+solver = PolyCROWNBern(bounds_method=Overapproximate, interval_repr=CombinedImp, poly_layers=1,  threshold=500000)
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     "./eval/mnist_fc",
@@ -50,9 +52,8 @@ println("running experiments ...")
 open(logfile, "w") do f
     println(f, "network,property,n_unfixed,result,time,steps,hist_file")
 end
-net_prop_reachedtimeout = fill(false,length(model_paths)*length(properties))
-
-
+net_prop_reachedtimeout = fill(true,length(model_paths)*length(properties))
+net_prop_reachedtimeout[runnerID * 3  + 1: runnerID * 3 + 3 ]= false
 
 for n_un in n_unfixed
 

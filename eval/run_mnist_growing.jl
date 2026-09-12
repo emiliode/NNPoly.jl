@@ -8,8 +8,8 @@ TIMEOUT  = 1800
 RUNNERID = 0 # set to 0..14
 
 println("precompiling ...")
-#solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
-solver = PolyCROWNBern(bounds_method=SmithBoundsMonomon, interval_repr=CombinedImp, poly_layers=1,  threshold=500000)
+solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
+#solver = PolyCROWNBern(bounds_method=SmithBoundsMonomon, interval_repr=CombinedImp, poly_layers=1,  threshold=500000)
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     "./eval/mnist_fc",
@@ -27,16 +27,16 @@ date_string = Dates.format(current_time, "yyyy-mm-dd_HH-MM-SS")
 
 patience = 2
 properties = 0:14
-n_unfixed = 1:50
+n_unfixed = 40:50
 model_paths = [
     "./eval/mnist_fc/onnx/mnist-net_256x2.onnx",
     "./eval/mnist_fc/onnx/mnist-net_256x4.onnx",
     "./eval/mnist_fc/onnx/mnist-net_256x6.onnx",
 ]
 params = NP.OptimisationParams(
-    n_steps = 1,#typemax(Int),
-    timeout = 60.0,
-    print_freq = 1,
+    n_steps = typemax(Int),
+    timeout = 1800.0,
+    print_freq = 50,
     y_stop = 0.0,
     save_ys = true,
     save_times = true,
@@ -53,7 +53,7 @@ open(logfile, "w") do f
     println(f, "network,property,n_unfixed,result,time,steps,hist_file")
 end
 net_prop_reachedtimeout = fill(true,length(model_paths)*length(properties))
-net_prop_reachedtimeout[RUNNERID * 3  + 1: RUNNERID * 3 + 3 ]= false
+net_prop_reachedtimeout[16 +  RUNNERID] = false
 
 for n_un in n_unfixed
 

@@ -15,6 +15,8 @@ df = CSV.read(csv_file, DataFrame)
 # Allocate new columns
 df.time_file = Vector{Union{Missing, Float64}}(missing, nrow(df))
 df.y = Vector{Union{Missing, Float64}}(missing, nrow(df))
+df.y_hist = Vector{Union{Missing, Vector{Float64}}}(missing, nrow(df))
+df.t_hist = Vector{Union{Missing, Vector{Float64}}}(missing, nrow(df))
 
 for i in 1:nrow(df)
     hist_path = df.hist_file[i]
@@ -23,11 +25,13 @@ for i in 1:nrow(df)
         data = load(hist_path)
 
         if haskey(data, "t_hist") && !isempty(data["t_hist"])
-            df.time_file[i] = data["t_hist"][1]   # or last(data["t_hist"])
+            df.time_file[i] = data["t_hist"][1]   
+            df.t_hist = data["t_hist"]
         end
 
         if haskey(data, "y_hist") && !isempty(data["y_hist"])
-            df.y[i] = data["y_hist"][1]           # or last(data["y_hist"])
+            df.y[i] = data["y_hist"][1]         
+            dy.y_hist = data["y_hist"]
         end
     else
         @warn "Could not find history file: $hist_path"

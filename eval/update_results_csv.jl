@@ -26,12 +26,12 @@ for i in 1:nrow(df)
 
         if haskey(data, "t_hist") && !isempty(data["t_hist"])
             df.time_file[i] = data["t_hist"][1]   
-            df.t_hist = data["t_hist"]
+            df.t_hist[i] = data["t_hist"]
         end
 
         if haskey(data, "y_hist") && !isempty(data["y_hist"])
             df.y[i] = data["y_hist"][1]         
-            dy.y_hist = data["y_hist"]
+            df.y_hist[i] = data["y_hist"]
         end
     else
         @warn "Could not find history file: $hist_path"

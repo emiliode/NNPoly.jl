@@ -5,11 +5,11 @@ const NP = NNPoly
 MNIST_PATH = "./eval/mnist_fc_growing"
 TIMEOUT  = 1800
 
-RUNNERID = 0 # set to 0..14
+RUNNERID = parse(Int, ENV["VM_NUM"]) # set to 0..14
 
 println("precompiling ...")
-solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
-#solver = PolyCROWNBern(bounds_method=SmithBoundsMonomon, interval_repr=CombinedImp, poly_layers=1,  threshold=500000)
+#solver = PolyCROWN(NP.DiffNNPolySym(common_generators = true))
+solver = PolyCROWNBern(bounds_method=SmithBoundsMonomon, interval_repr=CombinedImp, poly_layers=1,  threshold=200000)
 properties, times, y_starts, ys, y_hists = verify_vnnlib(
     solver,
     "./eval/mnist_fc",
@@ -27,7 +27,7 @@ date_string = Dates.format(current_time, "yyyy-mm-dd_HH-MM-SS")
 
 patience = 2
 properties = 0:14
-n_unfixed = 40:50
+n_unfixed = 1:50
 model_paths = [
     "./eval/mnist_fc/onnx/mnist-net_256x2.onnx",
     "./eval/mnist_fc/onnx/mnist-net_256x4.onnx",
@@ -45,7 +45,7 @@ params = NP.OptimisationParams(
 )
 force_gc = true
 logfile_prefix = "./eval/mnist_fc_growing/"
-logfile = logfile_prefix * "logs_" * date_string * ".csv"
+logfile = logfile_prefix * "logs_T_200000" * date_string * ".csv"
 
 println("running experiments ...")
 
@@ -53,7 +53,7 @@ open(logfile, "w") do f
     println(f, "network,property,n_unfixed,result,time,steps,hist_file")
 end
 net_prop_reachedtimeout = fill(true,length(model_paths)*length(properties))
-net_prop_reachedtimeout[16 +  RUNNERID] = false
+net_prop_reachedtimeout[1 +  3*RUNNERID: 3 + 3*RUNNERID] .= false
 
 for n_un in n_unfixed
 

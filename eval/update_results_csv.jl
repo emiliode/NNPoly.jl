@@ -44,4 +44,4 @@ output_file = base * "_with_hist" * ext
 
 CSV.write(output_file, df)
 
-println("Wrote updated CSV to: $output_file")
+println("$output_file")

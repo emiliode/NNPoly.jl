@@ -1,5 +1,13 @@
 # NNPoly
 
+## PolyCROWNBern
+
+- my final interval representations is in ./src/reachability/combined_bernstein_interval.jl 
+- the solver is in ./src/reachability/poly_crown_bern.jl
+- results can be found in ./eval/final_server
+
+
+
 A tool for neural network verification with optimizable polynomial overapproximations.
 
 Have a look at the [demo_notebook.ipynb](https://github.com/phK3/NNPoly.jl/blob/main/demo_notebook.ipynb) for usage examples.

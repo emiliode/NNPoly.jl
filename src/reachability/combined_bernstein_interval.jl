@@ -1283,9 +1283,12 @@ function bernstein_bounds(interval::CombinedPolyBernsteinInterval; method=Overap
         !isnothing(S_min) && push!(needed_sets, (S_min, p_idx, :low))
         !isnothing(S_max) && push!(needed_sets, (S_max, p_idx, :high))
     end
-
-    maximal_sets, owned = partition_maximal_merged_fast(map(x -> x[1], needed_sets); threshold)
-
+	if false
+    	maximal_sets, owned = partition_maximal_merged_fast(map(x -> x[1], needed_sets); threshold)
+	else
+		maximal_sets = max(x -> x[1], needed_sets)
+		owned = map(x ->[x], eachindex(maximal_sets))
+	end
     for (i_idx, S) in enumerate(maximal_sets)
         lens = [length(S[m]) for m in 1:interval.n]
         nonscalar = [m for m in 1:interval.n if lens[m] > 1]

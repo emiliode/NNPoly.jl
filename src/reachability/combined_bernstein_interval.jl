@@ -83,7 +83,6 @@ function map_sp_to_correct_interval(E::AbstractArray{Int8}, G_Low::TN, G_Up::TN)
             for k in 1:p
                 coeff *= cvecs[k][idx[k]+1]
             end
-            #key = NTuple{p,Int8}(jt)
 
 
             v_low = get(acc_low, idx, nothing)
@@ -95,7 +94,7 @@ function map_sp_to_correct_interval(E::AbstractArray{Int8}, G_Low::TN, G_Up::TN)
                 v_low .+= coeff .* gcol_low
                 v_up .+= coeff .* gcol_up
             end
-	    # grow idx "digit by digit" 
+	    # grow idx digit by digit 
             k = 1
             while k <= p
                 if idx[k] < e[k]
@@ -421,7 +420,6 @@ end
 
 function square(Low::TC, Up::TC, bern_terms::TN; use_memory_optimizations=true) where {N<:Number,M<:Number,TN<:AbstractArray{N},TC<:AbstractArray{M}}
     t = size(Low, 2)
-    new_t = t^2
     cur_order = size(bern_terms, 2) - 1
     n = size(bern_terms, 1) ÷ t
     new_order = 2 .* cur_order
@@ -438,36 +436,19 @@ function square(Low::TC, Up::TC, bern_terms::TN; use_memory_optimizations=true) 
 
     scaled_b = repeat(scaled, t)
 
-    #conv = row_convolution_kernel(scaled_a,scaled_b)
     conv = batched_conv_rowwise(scaled_a, scaled_b)
 
     new_terms = conv ./ C_rescale
 
     n_rows, n_cols = size(Low)
 
-    # (n_rows, n_cols, 1) .* (n_rows, 1, n_cols) -> (n_rows, n_cols, n_cols), dann reshape
     low_outer = reshape(Low, n_rows, n_cols, 1) .* reshape(Low, n_rows, 1, n_cols)
     new_low = reshape(low_outer, n_rows, n_cols^2)
 
     up_outer = reshape(Up, n_rows, n_cols, 1) .* reshape(Up, n_rows, 1, n_cols)
     new_up = reshape(up_outer, n_rows, n_cols^2)
 
-    #new_low = similar(interval.Low,size(interval.Low,1),new_t)
-    #new_up = similar(interval.Up,size(interval.Up,1),new_t)
-    #i =1 
-    #for c1 in axes(interval.Low,2)
-    #    for c2 in axes(interval.Low,2)
-    #        @views new_low[:,i] .=  interval.Low[:,c1] .* interval.Low[:,c2]
-    #        @views new_up[:,i] .=  interval.Up[:,c1] .* interval.Up[:,c2]
-    #        i+=1
-    #    end
-    #end
-    #new_zeros , new_powers_of_two = normal_two_compressed(new_terms) 
     return new_low, new_up, new_terms
-    #if use_memory_optimizations 
-    ret#urn combine_terms(CombinedPolyBernsteinInterval(new_low,new_up,new_zeros,new_powers_of_two,new_t,interval.n,new_order,interval.X))
-    #end
-    #return CombinedPolyBernsteinInterval(new_low,new_up,new_zeros,new_powers_of_two,new_t,interval.n,new_order,interval.X)
 end
 function elevate_all_to(bern_terms, new_order::Int64)
     bern_term_rows = size(bern_terms, 1)
@@ -497,12 +478,6 @@ function add(low_a, up_a, bern_terms_a, low_b, up_b, bern_terms_b; use_memory_op
 
     return [low_a low_b], [up_a up_b], [elevated_a; elevated_b]
 
-    #if use_memory_optimizations 
-    # return combine_terms(CombinedPolyBernsteinInterval( 
-    # [elevated_a.Low elevated_b.Low], [elevated_a.Up elevated_b.Up], 
-    # [elevated_a.bern_terms_coeffs; elevated_b.bern_terms_coeffs] , [elevated_a.bern_terms_2_exp ; elevated_b.bern_terms_2_exp], elevated_a.t + elevated_b.t, elevated_a.n, new_order, elevated_a.X ))
-    #end
-    #return CombinedPolyBernsteinInterval( [elevated_a.Low elevated_b.Low], [elevated_a.Up elevated_b.Up],[elevated_a.bern_terms_coeffs; elevated_b.bern_terms_coeffs], [elevated_a.bern_terms_2_exp ; elevated_b.bern_terms_2_exp], elevated_a.t + elevated_b.t, elevated_a.n, new_order, elevated_a.X )
 end
 
 
@@ -536,19 +511,6 @@ function quadratic_propagation(a_low, b_low, c_low, a_up, b_up, c_up, inter::Com
     return translate(res_inter, c_low, c_up)
 
 end
-function unique_idx(term, orders, j)
-    #n = length(orders)
-    #left_prod = one(eltype(term))
-    #right_prod = one(eltype(term))
-    #for row_idx in axes(term,1)
-    #    left_prod *= term[row_idx,1]
-    #    right_prod *= term[row_idx,orders[row_idx]]
-    #end
-    if all(term[1, :] .<= 0.0)
-        return orders[j] + 1, 1
-    end
-    return 1, orders[j] + 1
-end
 
 """
 max/min for one in all variables monoton increasing term in implicit repr. 
@@ -580,7 +542,7 @@ function term_min_step_along_j(term, orders, j)
     return min_step_j * abs(other_factor)
 end
 
-function term_min_step_along_j(coeffs, twoExps, n, order, j)::Float64
+function term_min_step_along_j(coeffs, twoExps,  order, j)::Float64
 
     if order == 1
         min_step_j = 1.0 - coeffs[j, 1]
@@ -599,11 +561,10 @@ end
 width of a term: max - min 
 """
 term_width(term, orders) = ((lo, hi)=term_extrema(term, orders); hi - lo)
-function bound_algo(as, order::Int8, t::Int, j::Int, constant_terms, term_widths, non_constant_mask, inc_mask, dec_mask, width_dec_full, width_inc_full, all_diff_dec, all_diff_inc)
+function bound_algo(as, order::Int8,  j::Int, constant_terms, term_widths, non_constant_mask, inc_mask, dec_mask, width_dec_full, width_inc_full, all_diff_dec, all_diff_inc)
     l_j = order+1
 
     non_constant_mask = non_constant_mask .&& .!(constant_terms[:, j])
-    constant_mask = .!non_constant_mask
 
     # exactly one term is non-constant with respect to x_j
     if count(non_constant_mask) == 1
@@ -611,7 +572,6 @@ function bound_algo(as, order::Int8, t::Int, j::Int, constant_terms, term_widths
         return min_idx:min_idx, max_idx:max_idx
     end
     # more than one non constant term therfore continue with monotonicity_test
-    #increasing_mask = as[non_constant_mask] .>= 0
 
 
     if all(!, inc_mask .&& non_constant_mask)
@@ -622,8 +582,6 @@ function bound_algo(as, order::Int8, t::Int, j::Int, constant_terms, term_widths
     end
 
     width_dec = width_dec_full - sum(term_widths[dec_mask .& constant_terms[:, j]] .* abs.(as[dec_mask .& constant_terms[:, j]]))
-    #@assert width_dec == width_dec_full "$width_dec != $width_dec_full"
-    #diff_inc = sum(min_steps_j[increasing_mask,j] .* abs.(as[increasing_mask])  )
     diff_inc = all_diff_inc[j]
 
     @assert diff_inc >= 0 "$diff_inc , $(all_diff_inc),"
@@ -634,7 +592,6 @@ function bound_algo(as, order::Int8, t::Int, j::Int, constant_terms, term_widths
 
 
     width_inc = width_inc_full - sum(term_widths[constant_terms[:, j] .& inc_mask] .* abs.(as[constant_terms[:, j] .& inc_mask]))
-    #diff_dec = sum(min_steps_j[decreasing_mask,j] .* abs.(as[decreasing_mask])  )
     diff_dec = all_diff_dec[j]
     @assert diff_dec >= 0 "$diff_dec , $(as[dec_mask]) "
     if diff_dec > width_inc
@@ -656,11 +613,9 @@ i.e. M[t_idx, :] holds the flattened outer product of coeff .* 2^exp for term t_
 """
 function build_M(coeffs::BitMatrix, twoExps::Matrix{Int8}, t::Int, n::Int, S, nonscalar, scalar_dims, dims::NTuple{K,Int}) where {K}
     total = prod(dims)
-    #Mfloat = Matrix{Float64}(undef,t,total)
     Mfloat = zeros(t,total)
 
 
-    # scratch buffers reused across t_idx to avoid per-term allocation
     for t_idx in 1:t
         rows = get_term(t_idx, n)
 
@@ -731,6 +686,7 @@ function evaluate_reduced_tensor_cached(coeffs::BitMatrix, twoExps::Matrix{Int8}
     out_flat = M' * as              # gemv: (prod(dims) × t) * (t) -> prod(dims)
     return extrema(out_flat)
 end
+
 function eval_scalar(coeffs::BitMatrix, twoExps::Matrix{Int8}, as::Vector{TA}, t, n,S ) where {TA}
     s = zero(TA)
     for t_idx in 1:t
@@ -970,7 +926,6 @@ end
 function faster_exact_bounds(as::AbstractArray{N}, coeffs::BitMatrix, twoExps::Matrix{Int8}, order::Int8, n::Int, t::Int, constant_terms::BitArray, term_widths::AbstractArray{Int}, min_steps_j::TN; method=SmithBoundsOverapproximate, threshold=5) where {N<:Number,TN<:AbstractArray{N}}
     S_max = Vector{UnitRange{Int64}}(undef, n)
     S_min = Vector{UnitRange{Int64}}(undef, n)
-    # expand bern_mat 
 
     non_constant_alphas = .!(isapprox.(as, 0; atol=1e-13))
     inc_mask = non_constant_alphas .&& as .> 0
@@ -979,14 +934,13 @@ function faster_exact_bounds(as::AbstractArray{N}, coeffs::BitMatrix, twoExps::M
     width_dec_full = sum(term_widths[dec_mask] .* abs.(as[dec_mask]))
     width_inc_full = sum(term_widths[inc_mask] .* abs.(as[inc_mask]))
 
-    #diff_inc = sum(min_steps_j[increasing_mask,j] .* abs.(as[increasing_mask])  )
 
     all_diff_inc = min_steps_j' * (as .* inc_mask) # we can ignore constant terms here because min_steps_j is zero for them 
 
     all_diff_dec = min_steps_j' * (as .* dec_mask) # we can ignore constant terms here because min_steps_j is zero for them 
 
     @ignore_derivatives for x_i in 1:n
-        S_min[x_i], S_max[x_i] = bound_algo(as, order, t, x_i, constant_terms, term_widths, non_constant_alphas, inc_mask, dec_mask, width_dec_full, width_inc_full, all_diff_dec, all_diff_inc)
+        S_min[x_i], S_max[x_i] = bound_algo(as, order,  x_i, constant_terms, term_widths, non_constant_alphas, inc_mask, dec_mask, width_dec_full, width_inc_full, all_diff_dec, all_diff_inc)
     end
     min_possibilites = prod(length, S_min)
     if min_possibilites > threshold || min_possibilites < 0 # check for overflow
@@ -997,13 +951,10 @@ function faster_exact_bounds(as::AbstractArray{N}, coeffs::BitMatrix, twoExps::M
             b_max = Inf
         end
     elseif S_min == S_max
-        #b_min, b_max = evaluate_reduced_tensor_cached(coeffs,twoExps,as,t,n,S_min)
         b_min, b_max = evaluate_reduced_tensor(coeffs, twoExps, as, t, n, S_min)
     else
         b_min, _ = evaluate_reduced_tensor(coeffs, twoExps, as, t, n, S_min)
         _, b_max = evaluate_reduced_tensor(coeffs, twoExps, as, t, n, S_max)
-        #b_min, _ = evaluate_reduced_tensor_cached(coeffs, twoExps, as, t, n, S_min)
-        #_, b_max = evaluate_reduced_tensor_cached(coeffs, twoExps, as, t, n, S_max)
     end
 
     return b_min, b_max
@@ -1021,14 +972,13 @@ function get_required_dims(as::AbstractArray{N},  order::Int8, n::Int, t::Int, c
     width_dec_full = sum(term_widths[dec_mask] .* abs.(as[dec_mask]))
     width_inc_full = sum(term_widths[inc_mask] .* abs.(as[inc_mask]))
 
-    #diff_inc = sum(min_steps_j[increasing_mask,j] .* abs.(as[increasing_mask])  )
 
     all_diff_inc = min_steps_j' * (as .* inc_mask) # we can ignore constant terms here because min_steps_j is zero for them 
 
     all_diff_dec = min_steps_j' * (abs.(as) .* dec_mask) # we can ignore constant terms here because min_steps_j is zero for them 
 
     @ignore_derivatives for x_i in 1:n
-        S_min[x_i], S_max[x_i] = bound_algo(as, order, t, x_i, constant_terms, term_widths, non_constant_alphas, inc_mask, dec_mask, width_dec_full, width_inc_full, all_diff_dec, all_diff_inc)
+        S_min[x_i], S_max[x_i] = bound_algo(as, order,  x_i, constant_terms, term_widths, non_constant_alphas, inc_mask, dec_mask, width_dec_full, width_inc_full, all_diff_dec, all_diff_inc)
     end
 
     min_possibilites = prod_capped(S_min; cap=threshold)
@@ -1053,44 +1003,10 @@ function precompute(coeffs::BitMatrix, twoExp::Matrix{Int8}, t, n, order)
     end
     term_widths = [1 - all(coeffs[get_term(t_idx, n), 1]) for t_idx in 1:t] # uses that the first element is always 0 or 1, and the last one is always on1
 
-    #term_widths = [term_width((@view bern_mat[get_term(t_idx,n),:]) ,orders) for t_idx in 1:t ]
 
-    min_steps_j = [term_min_step_along_j((@view coeffs[get_term(t_idx, n), :]), (@view twoExp[get_term(t_idx, n), :]), n, order, j)
+    min_steps_j = [term_min_step_along_j((@view coeffs[get_term(t_idx, n), :]), (@view twoExp[get_term(t_idx, n), :]),  order, j)
                    for t_idx in 1:t, j in 1:n]
     return constant_terms, term_widths, min_steps_j
-end
-
-"""
-Computes vector of lower bounds for Matrix of exponents.
-"""
-function monomial_lbs_0_1(E::M) where {M<:AbstractMatrix{<:Integer}}
-    #one_odd = .~reduce(&, iseven.(E), dims = 1)
-    # sum is only zero for a column if all rows are zero
-    consts = sum(E, dims=1) .== 0
-
-    # const columns have lb=1 (so we need to add 1 for them)
-    # all other cols have lb=0 (so we don't need to add anything for them)
-    #lbs = .- one_odd .+ consts
-    return vec(consts)
-end
-
-"""
-Computes interval bounds for each component of a sparse polynomial.
-Variables are assumed to be in range [0, 1].
-"""
-function bounds_0_1(sp::SparsePolynomial{N,M,T,GM,EM,VI}) where {N,M,T,GM,EM,VI}
-
-    n, m = size(sp.E)
-    #lbs = [monomial_lb(ej) for ej in eachcol(sp.E)]
-    lbs = @ignore_derivatives monomial_lbs_0_1(sp.E)
-    ubs = ones(m)  # ub is just always 1 under our assumptions
-
-    G⁻ = min.(zero(N), sp.G)
-    G⁺ = max.(zero(N), sp.G)
-    lb = G⁻ * ubs .+ G⁺ * lbs
-    ub = G⁻ * lbs .+ G⁺ * ubs
-
-    return lb, ub
 end
 
 function s_contains(outer::Vector{<:UnitRange}, inner::Vector{<:UnitRange})
@@ -1136,11 +1052,11 @@ end
 function prod_capped(dims; cap::Int)
     p = 1
     for d in dims
-        wp = widemul(p, length(d))   # Int128, can't overflow here
+        wp = widemul(p, length(d))   
         if wp > cap
             return nothing
         end
-        p = Int(wp)                  # safe: wp <= cap, cap is an Int64
+        p = Int(wp)                 
     end
     return p
 end
@@ -1156,7 +1072,6 @@ function partition_maximal_merged_fast(Ss::Vector{Vector{UnitRange{Int}}}; thres
         next_id += 1
     end
 
-    # heap entries: (size, id_a, id_b) -- lazily checked for staleness on pop
     heap = BinaryMinHeap{Tuple{Int,Int,Int}}()
 
     function push_candidates!(new_id::Int, ids)
@@ -1285,7 +1200,12 @@ function bernstein_bounds(interval::CombinedPolyBernsteinInterval; method=Overap
         !isnothing(S_max) && push!(needed_sets, (S_max, p_idx, :high))
     end
 
-    maximal_sets, owned = partition_maximal_merged_fast(map(x -> x[1], needed_sets); threshold)
+    if method == SmithBoundsMonomonCached
+	maximal_sets, owned = partition_maximal_merged_fast(map(x -> x[1], needed_sets); threshold)
+    else 
+	maximal_sets = map(x -> x[1], needed_sets)
+	owned = map(x -> x[1], eachindex(maximal_sets))
+    end
 
     for (i_idx, S) in enumerate(maximal_sets)
         lens = [length(S[m]) for m in 1:interval.n]
@@ -1321,17 +1241,12 @@ function bernstein_bounds(interval::CombinedPolyBernsteinInterval; method=Overap
     return lbs, ubs
 end
 
-"""
-Top-level bounds function: dispatches to bernstein_bounds for Overapproximate/SmithBoundsOverapproximate
-(which has a custom, memory-safe rrule), or handles SmithBoundsMonomon by combining bernstein_bounds
-with the monomial-basis bound -- this branch is NOT covered by a custom rrule, so Zygote traces it
-normally (acceptable since it's not the branch causing memory issues).
-"""
+
 function bounds(interval::CombinedPolyBernsteinInterval; method=Overapproximate, threshold=-1)
     if method == Overapproximate || method == SmithBoundsOverapproximate
         return bernstein_bounds(interval; method, threshold)
-    elseif method == SmithBoundsMonomon
-        lbs, ubs = bernstein_bounds(interval; method=SmithBoundsOverapproximate, threshold)
+    elseif method == SmithBoundsMonomon || method == SmithBoundsMonomonCached
+        lbs, ubs = bernstein_bounds(interval; method=method, threshold)
         poly_interval = to_sparse_polynomial(interval)
         splbs, _ = bounds(poly_interval.Low)
         _, spubs = bounds(poly_interval.Up)
@@ -1372,7 +1287,7 @@ function ChainRulesCore.rrule(::typeof(bernstein_bounds),
     else
         lbs  = fill(T(-Inf), num_p)
         ubs  = fill(T( Inf), num_p)
-        Wlow = zeros(T, num_p, interval.t)   # solange keine Menge gewinnt: Gradient 0
+        Wlow = zeros(T, num_p, interval.t)  
         Wup  = zeros(T, num_p, interval.t)
     end
 
@@ -1380,7 +1295,6 @@ function ChainRulesCore.rrule(::typeof(bernstein_bounds),
         return (lbs, ubs), _bernstein_bounds_pullback(Wlow, Wup)
     end
 
-    # ---- Verfeinerung über Cluster (identisch zum Primal, plus argmin/argmax) ----
     constant_terms, term_widths, min_steps_j =
         precompute(interval.bern_terms_coeffs, interval.bern_terms_2_exp,
                    interval.t, interval.n, interval.order)
@@ -1397,7 +1311,12 @@ function ChainRulesCore.rrule(::typeof(bernstein_bounds),
         !isnothing(S_max) && push!(needed_sets, (S_max, p_idx, :high))
     end
 
-    maximal_sets, owned = partition_maximal_merged_fast(map(x -> x[1], needed_sets); threshold)
+    if method == SmithBoundsMonomonCached
+	maximal_sets, owned = partition_maximal_merged_fast(map(x -> x[1], needed_sets); threshold)
+    else
+	maximal_sets = map(x -> x[1], needed_sets)
+	owned = map(x -> [x], eachindex(maximal_sets))
+    end
 
     for (i_idx, S) in enumerate(maximal_sets)
         lens        = [length(S[m]) for m in 1:interval.n]
@@ -1493,28 +1412,7 @@ function all_bounds(interval::CombinedPolyBernsteinInterval; method=Overapproxim
 
     buckets = Dict{Vector{Float64}, Vector{Int}}()  # rounded-key -> indices into unique_as
 
-    #low_evaluated_poly = Array{Int64}(undef, size(interval.Low, 1))
-    #@ignore_derivatives for i in axes(interval.Low, 1)
-    #    idx = findfirst(x -> isapprox((@view interval.Low[i, :]), (@view interval.Low[x[1], :])), unique_as)
-    #    if isnothing(idx)
-    #        push!(unique_as, (i, true))
-    #        low_evaluated_poly[i] = size(unique_as, 1)
-    #    else
-    #        low_evaluated_poly[i] = idx
-    #    end
-    #end
 
-    #up_evaluated_poly = Array{Int64}(undef, size(interval.Up, 1))
-    #@ignore_derivatives for i in axes(interval.Up, 1)
-    #    idx = findfirst(x -> isapprox((@view interval.Up[i, :]), (x[2] ? (@view interval.Low[x[1], :]) : @view interval.Up[x[1], :])), unique_as)
-    #    if isnothing(idx)
-    #        push!(unique_as, (i, false))
-    #        up_evaluated_poly[i] = size(unique_as, 1)
-    #    else
-    #        up_evaluated_poly[i] = idx
-    #    end
-    #end
-    # reenable after here
     low_evaluated_poly = Array{Int64}(undef, size(interval.Low, 1))
     @ignore_derivatives for i in axes(interval.Low, 1)
         row = @view interval.Low[i, :]
@@ -1642,8 +1540,6 @@ function all_bounds(interval::CombinedPolyBernsteinInterval; method=Overapproxim
         llbsi, lubsi = unique_bounds[low_evaluated_poly[p_idx]]
         ulbsi, uubsi = unique_bounds[up_evaluated_poly[p_idx]]
 
-#        llbsF, lubsF = faster_exact_bounds(interval.Low[p_idx,:],interval.bern_terms_coeffs,interval.bern_terms_2_exp,interval.order,interval.n,interval.t,constant_terms,term_widths,min_steps_j;threshold,method)
-
         if method == SmithBoundsMonomon
             llbs = [llbs..., max(llbsi, llbs_sp[p_idx])]
             lubs = [lubs..., min(lubsi, lubs_sp[p_idx])]
@@ -1706,26 +1602,5 @@ function combine_terms(inter::CombinedPolyBernsteinInterval)
         #Up[:,t_idx] .+=  inter.Up[:, old_term_idx]
     end
     return CombinedPolyBernsteinInterval(Low, Up, vcat(unique_term_coeffs...), vcat(unique_term_twoExps...), length(unique_term_coeffs), inter.n, inter.order, inter.X, inter.lbs, inter.ubs)
-    # look for zero columns: 
-    #new_Low =  zeros(eltype(inter.Low), size(inter.Low,1), 0)   # num_polys×0 matrix
-    #new_Up =  zeros(eltype(inter.Up), size(inter.Up,1), 0)   # num_polys×0 matrix
-    #new_unique_terms  = Matrix{eltype(inter.bern_terms)}[]
-    #for col_idx in axes(Low,2)
-    #    low_col = @view Low[:,col_idx]
-    #    up_col = @view Up[:,col_idx]
-    #    if all(low_col .== 0) && all(up_col .== 0)
-    #        continue
-    #    end
-    #    new_unique_terms = [new_unique_terms... ,unique_terms[col_idx]]
-    #    new_Low = [new_Low low_col]
-    #    new_Up = [new_Up up_col]
-    #    
-    #end
-    #if isempty(new_unique_terms)
-    #    new_unique_terms = [new_unique_terms..., constant_term(eltype(inter.bern_terms),inter.n,inter.orders)]
-    #    new_Low =  zeros(eltype(inter.Low), size(inter.Up,1), 1)   # num_polys×1 matrix
-    #    new_Up =  zeros(eltype(inter.Up), size(inter.Up,1), 1)   # num_polys×1 matrix
-    #end
-    #return CombinedPolyBernsteinInterval(new_Low,new_Up,vcat(new_unique_terms...),length(new_unique_terms),inter.n,inter.orders,inter.X,inter.lbs,inter.ubs)
 
 end

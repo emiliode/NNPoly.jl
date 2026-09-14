@@ -1,6 +1,6 @@
 
 @enum IntervalRepr Dense Imp CombinedImp
-@enum BoundsMethod Overapproximate SmithBoundsOverapproximate SmithBoundsMonomon CalculateAllDense
+@enum BoundsMethod Overapproximate SmithBoundsOverapproximate SmithBoundsMonomon SmithBoundsMonomonCached CalculateAllDense
 
 @with_kw struct PolyCROWNBern <: NV.Solver
     separate_alpha = true
@@ -94,10 +94,6 @@ function NV.forward_network(
     Lᵤ = sᵤ.Low
     Uᵤ = sᵤ.Up
 
-    # define them here, s.t. we can reference them in the return statement
-    # the remainder of the code would also work if we didn't define them here at all
-    # just somehow define them with the same type as later, it's not important that they
-    # have the values of sₗ and sᵤ
     l_poly = input_set.Low; 
     u_poly = input_set.Up;
     # careful with from_layer and i!!!
@@ -270,14 +266,7 @@ function initialize_params_bounds(
         use_memory_optimizations = solver.use_memory_optimizations,
     )
     ŝ = forward_linear(ipsolver, net[1], input)
-
-    # don't know the sizes of these arrays beforehand, so just let them empty. Real numbers get pushed during initialization.
-    #rs = Vector{Int}()
-    #cs = Vector{Int}()
-    #symmetric_factor = Vector{Int}()
-    #unique_idxs = Vector{Int}()
-    #duplicate_idxs = Vector{Int}()
-
+    #
     # for first layer, bounds from s.Low and s.Up are the same
     if ŝ isa BernsteinInterval 
 	    l, u = bounds(ŝ.Low, ŝ.X; method=solver.bounds_method)
@@ -294,11 +283,7 @@ function initialize_params_bounds(
         ŝ,
         l,
         u,
-    #    rs,
-    #    cs,
-    #    symmetric_factor,
-    #    unique_idxs,
-    #    duplicate_idxs,
+
     )
     for layer in 2:solver.poly_layers
         s_poly = forward_linear(ipsolver,net[layer],s_poly)
@@ -470,9 +455,6 @@ function forward_act_stub(
 end
 
 
-"""
-Does not! perform optimisation at the moment only a single pass!
-"""
 function optimise_bounds(
     solver::PolyCROWNBern,
     net::Chain,
@@ -485,17 +467,8 @@ function optimise_bounds(
     psolver = solver.poly_solver
     s = initialize_symbolic_domain(solver, net[1:solver.poly_layers], input_set;repr=solver.interval_repr)
 
-    # TODO: is there some better way of returning all those precomputed values?
-    # bounds before activation in first layer are just interval bounds and don't change
-    # with different α parameters, so we can just reuse ŝ (the reachable set after the 1st linear layer),
-    # l and u (the bounds after the 1st linear layer) throughout the optimization loop
-    ŝ, lbs, ubs = #, rs, cs, symmetric_factor, unique_idxs, duplicate_idxs =
-        initialize_params_bounds(solver, net, 2, s)
-    if solver.prune_neurons
-        # TODO: maybe add as callback to optimisation?
-        ŝ = select_idxs(ŝ, .~(ubs[1] .<= 0), 1)
-        net, lbs, ubs = prune(ZeroPruner(), net, lbs, ubs)
-    end
+    ŝ, lbs, ubs = initialize_params_bounds(solver, net, 2, s)
+
 
     optfun =
         m -> begin
@@ -510,18 +483,12 @@ function optimise_bounds(
                 ŝ,
                 lbs[1],
                 ubs[1],
-               # rs,
-               # cs,
-               # symmetric_factor,
-               # unique_idxs,
-               # duplicate_idxs,
+  
             )
-            #for layer  in 2:solver.poly_layers
-            #    s_poly = forward_linear(solver.poly_solver,m[layer],s_poly)
-            #    #ll, lu, ul, uu = bounds(s_poly; method=solver.bounds_method, threshold=solver.threshold)
-            #    ll,  lu,ul, uu = all_bounds(s_poly; method=solver.bounds_method, threshold=solver.threshold)
-            #    s_poly = forward_act(solver.poly_solver,m[layer],s_poly)
-            #end
+            for layer  in 2:solver.poly_layers
+                s_poly = forward_linear(solver.poly_solver,m[layer],s_poly)
+                s_poly = forward_act(solver.poly_solver,m[layer],s_poly)
+            end
             s_crown = NV.forward_network(
                 solver.lin_solver,
                 m[(solver.poly_layers + 1):end],
@@ -535,8 +502,6 @@ function optimise_bounds(
             ll, lu = bounds(s_crown.Λ, s_crown.λ, s_poly;method=solver.bounds_method, threshold=solver.threshold)
             ul, uu = bounds(s_crown.Γ, s_crown.γ, s_poly;method=solver.bounds_method, threshold=solver.threshold)
 
-            #loss = sum(uu .- ll)
-            #loss = sum(max.(0., uu))  # loss for verifying Ay - b ≤ 0 properties
             return loss_fun(ll, uu)
         end
 

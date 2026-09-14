@@ -96,11 +96,7 @@ function forward_act(
             throw(ArgumentError("Initialisation method $(solver.init_method) not known!"))
         end
     else
-        #cₗ = [ifelse(l >= 0, [0., 1, 0], ifelse(u <= 0, zeros(3), get_lower_polynomial_shift(l, u, 2, a))) for (l, u, a) in zip(ll, lu, eachcol(α[1,:,:]))]
-        #cᵤ = [ifelse(l >= 0, [0., 1, 0], ifelse(u <= 0, zeros(3), get_upper_polynomial_shift(l, u, 2, a))) for (l, u, a) in zip(ul, uu, eachcol(α[2,:,:]))]
-        #cₗ = get_lower_polynomial_shift.(ll, lu, 2, eachcol(α[1,:,:]))
-        #cᵤ = get_upper_polynomial_shift.(ul, uu, 2, eachcol(α[2,:,:]))
-        cₗ = get_lower_polynomial_shift(ll, lu, 2, α[1, :, :]')
+             cₗ = get_lower_polynomial_shift(ll, lu, 2, α[1, :, :]')
         cᵤ = get_upper_polynomial_shift(ul, uu, 2, α[2, :, :]')
     end
 

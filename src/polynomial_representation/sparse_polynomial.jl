@@ -40,7 +40,6 @@ function SparsePolynomial(
     id_dtype = UInt16,
 ) where {N<:Number}
     n = dim(h)
-    @show h
     unfixed_mask = (h.radius .!= 0)
     G = [h.center I(n)[:, unfixed_mask] .* h.radius]
     E = [zeros(exponent_dtype, n) I(n)[:, unfixed_mask]]

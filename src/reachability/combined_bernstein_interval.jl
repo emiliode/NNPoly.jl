@@ -1286,7 +1286,7 @@ function bernstein_bounds(interval::CombinedPolyBernsteinInterval; method=Overap
 	if false
     	maximal_sets, owned = partition_maximal_merged_fast(map(x -> x[1], needed_sets); threshold)
 	else
-		maximal_sets = max(x -> x[1], needed_sets)
+		maximal_sets = map(x -> x[1], needed_sets)
 		owned = map(x ->[x], eachindex(maximal_sets))
 	end
     for (i_idx, S) in enumerate(maximal_sets)
